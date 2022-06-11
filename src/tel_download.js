@@ -4,6 +4,7 @@
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download streaming videos on Telegram
 // @author       Nestor Qin
+// @license      GNU GPLv3
 // @website      https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @match        https://web.telegram.org/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
