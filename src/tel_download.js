@@ -11,6 +11,7 @@
 // @grant        none
 // ==/UserScript==
 
+let workers = [];
 (function () {
   const logger = {
     info: (message) => {
@@ -172,7 +173,7 @@
           "btn-icon default__button _tel_download_button_video";
         downloadButton.innerHTML = downloadIcon;
         downloadButton.onclick = () => {
-          tel_download_video(videoUrl);
+          workers.push(tel_download_video(videoUrl));
         };
         brControls.prepend(downloadButton);
       }
@@ -196,7 +197,7 @@
       downloadButton.style.backgroundColor = "black";
       downloadButton.onclick = (e) => {
         e.stopPropagation();
-        tel_download_image(imageUrl);
+        workers.push(tel_download_image(imageUrl));
       };
       ele.appendChild(container);
       container.appendChild(downloadButton);
