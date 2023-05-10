@@ -245,51 +245,35 @@
     } else if (!ele.querySelector("._tel_download_button_img")) {
       // add download button to images
       const image = ele.querySelector("img.thumbnail");
-      if(image != null){
-        let imageUrl = image.src;
-        const container = document.createElement("div");
-        container.className = "_tel_download_button_img_container";
-        container.style.position = "absolute";
-        container.style.width = "100%";
-        container.style.height = "100%";
-        container.style.display = "flex";
-        container.style.justifyContent = "center";
-        container.style.alignItems = "end";
-        const downloadButton = document.createElement("button");
-        downloadButton.className =
-            "btn-icon default__button _tel_download_button_img";
-        downloadButton.innerHTML = downloadIcon;
-        downloadButton.style.marginBottom = "16px";
-        downloadButton.style.backgroundColor = "black";
-        downloadButton.onclick = (e) => {
-            e.stopPropagation();
-            tel_download_image(imageUrl);
-        };
-        ele.appendChild(container);
-        container.appendChild(downloadButton);
-      }else {
-        let gifUrl = ele.querySelector("video").src;
-        const container = document.createElement("div");
-        container.className = "_tel_download_button_img_container";
-        container.style.position = "absolute";
-        container.style.width = "100%";
-        container.style.height = "100%";
-        container.style.display = "flex";
-        container.style.justifyContent = "center";
-        container.style.alignItems = "end";
-        const downloadButton = document.createElement("button");
-        downloadButton.className =
-            "btn-icon default__button _tel_download_button_img";
-        downloadButton.innerHTML = downloadIcon;
-        downloadButton.style.marginBottom = "16px";
-        downloadButton.style.backgroundColor = "black";
-        downloadButton.onclick = (e) => {
-            e.stopPropagation();
-            tel_download_gif(gifUrl);
-        };
-        ele.appendChild(container);
-        container.appendChild(downloadButton);
+      let url, downloadFunction;
+      if(image != null) {
+        url = image.src;
+        downloadFunction = tel_download_image;
       }
+      else {
+        url = ele.querySelector("video").src;
+        downloadFunction = tel_download_gif;
+      }
+      const container = document.createElement("div");
+      container.className = "_tel_download_button_img_container";
+      container.style.position = "absolute";
+      container.style.width = "100%";
+      container.style.height = "100%";
+      container.style.display = "flex";
+      container.style.justifyContent = "center";
+      container.style.alignItems = "end";
+      const downloadButton = document.createElement("button");
+      downloadButton.className =
+        "btn-icon default__button _tel_download_button_img";
+      downloadButton.innerHTML = downloadIcon;
+      downloadButton.style.marginBottom = "16px";
+      downloadButton.style.backgroundColor = "black";
+      downloadButton.onclick = (e) => {
+        e.stopPropagation();
+        downloadFunction(url);
+      };
+      ele.appendChild(container);
+      container.appendChild(downloadButton);
     }
   }, 500);
 })();
