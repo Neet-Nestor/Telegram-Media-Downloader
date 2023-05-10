@@ -40,8 +40,8 @@
       })
         .then((res) => {
           logger.info("get response ", res);
-          if (res.status !== 206 && res.status !== 200) {
-            logger.error("HTTP response status is not 200 or 206: " + res.status);
+          if (![200, 206].includes(res.status)) {
+            logger.error("Non 200/206 response was received: " + res.status);
             return;
           }
 
@@ -141,70 +141,6 @@
     logger.info("Download triggered");
   };
 
-  const tel_download_gif = (url) => {
-    let _blobs = [];
-    let _next_offset = 0;
-    let _total_size = null;
-    let _file_extension = "mp4";
-
-    const fetchNextPart = () => {
-      fetch(url, { method: "GET" })
-        .then((res) => {
-        if (res.status !== 206 && res.status !== 200) {
-          console.error("Non 200 response was received: " + res.status);
-          return;
-        }
-
-        const mime = res.headers.get("Content-Type").split(";")[0];
-        if (!mime.startsWith("video/")) {
-          throw "Get non video response with MIME type " + mime;
-        }
-        _file_extension = mime.split("/")[1];
-
-        logger.info(
-          `Get response: ${res.headers.get(
-            "Content-Length"
-          )} bytes data from ${res.headers.get("Content-Range")}`
-        );
-        return res.blob();
-      })
-        .then((resBlob) => {
-        _blobs.push(resBlob);
-      })
-        .then(() => {
-        if (_next_offset < _total_size) {
-          fetchNextPart();
-        }
-        else {
-          save();
-        }
-      })
-        .catch((reason) => {
-        logger.error(reason);
-      });
-
-    };
-
-    const save = () => {
-      console.info("Finish downloading blobs. Concatenating blobs and downloading...");
-      const fileName = (Math.random() + 1).toString(36).substring(2, 10) + "." + _file_extension;
-      const blob = new Blob(_blobs, { type: "video/mp4" });
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      logger.info("Final blob size: " + blob.size + " bytes");
-
-      const a = document.createElement("a");
-      document.body.appendChild(a);
-      a.href = blobUrl;
-      a.download = fileName;
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(blobUrl);
-      console.info("Download triggered");
-    };
-
-    fetchNextPart();
-  };
   logger.info("Initialized");
 
   // Copied and modified from Heroicons (https://heroicons.com/)
@@ -213,67 +149,90 @@
     <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
   </svg>`;
 
+  const createOrReplaceDownloadButton = (container, url, type) => {
+    if (!container.querySelector("._tel_download_button_img_container")) {
+      const innerContainer = document.createElement("div");
+      innerContainer.className = "_tel_download_button_img_container";
+      innerContainer.style.position = "absolute";
+      innerContainer.style.width = "100%";
+      innerContainer.style.height = "100%";
+      innerContainer.style.display = "flex";
+      innerContainer.style.justifyContent = "center";
+      innerContainer.style.alignItems = "end";
+      container.appendChild(innerContainer);
+    }
+    const innerContainer = container.querySelector('._tel_download_button_img_container');
+    const currentButton = innerContainer && innerContainer.querySelector('._tel_download_button_img');
+    const downloadButton = document.createElement("button");
+    downloadButton.className =
+      "btn-icon default__button _tel_download_button_img";
+    downloadButton.innerHTML = downloadIcon;
+    downloadButton.setAttribute('data-href', url);
+    downloadButton.style.marginBottom = "16px";
+    downloadButton.style.backgroundColor = "black";
+    downloadButton.onclick = (e) => {
+      e.stopPropagation();
+      if (type === 'image') {
+        tel_download_image(url);
+      } else if (type === 'video') {
+        tel_download_video(url);
+      }
+    };
+    if (currentButton === null) {
+      // Create the button
+      container.appendChild(innerContainer);
+      innerContainer.appendChild(downloadButton);
+    } else if (currentButton.getAttribute('data-href') !== url) {
+      // Replace the button
+      innerContainer.innerHTML = '';
+      innerContainer.appendChild(downloadButton);
+    }
+  };
+
   setInterval(() => {
-    const ele = document.querySelector(
+    // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
+    const mediaContainer = document.querySelector(
       ".media-viewer-movers .media-viewer-aspecter"
     );
-    if (!ele) return;
+    if (!mediaContainer) return;
 
-    if (ele.querySelector(".ckin__player")) {
+    // 1. Video player detected - Video and it has finished initial loading
+    // container > .ckin__player > video[src]
+    if (mediaContainer.querySelector(".ckin__player")) {
       // remove download img button if there's any
       document
         .querySelectorAll("._tel_download_button_img_container")
         .forEach((e) => e.remove());
 
       // add download button to videos
-      const controls = ele.querySelector(".default__controls.ckin__controls");
-      const videoUrl = ele.querySelector("video").src;
+      const controls = mediaContainer.querySelector(
+        ".default__controls.ckin__controls"
+      );
+      const videoUrl = mediaContainer.querySelector("video").src;
 
       if (controls && !controls.querySelector("._tel_download_button_video")) {
         const brControls = controls.querySelector(
           ".bottom-controls .right-controls"
         );
         const downloadButton = document.createElement("button");
-        downloadButton.className =
-          "btn-icon default__button _tel_download_button_video";
+        downloadButton.className = "btn-icon default__button _tel_download_button_video";
         downloadButton.innerHTML = downloadIcon;
         downloadButton.onclick = () => {
           tel_download_video(videoUrl);
         };
         brControls.prepend(downloadButton);
       }
-    } else if (!ele.querySelector("._tel_download_button_img")) {
+      // 2. Video HTML element detected, could be either GIF or unloaded video
+      // container > video[src]
+    } else if (mediaContainer.querySelector("video")) {
+      const videoUrl = mediaContainer.querySelector("video").src;
+      createOrReplaceDownloadButton(mediaContainer, videoUrl, 'video');
+      // 3. Image detected
+      // container > img.thumbnail
+    } else if (!mediaContainer.querySelector("._tel_download_button_img")) {
       // add download button to images
-      const image = ele.querySelector("img.thumbnail");
-      let url, downloadFunction;
-      if(image != null) {
-        url = image.src;
-        downloadFunction = tel_download_image;
-      }
-      else {
-        url = ele.querySelector("video").src;
-        downloadFunction = tel_download_gif;
-      }
-      const container = document.createElement("div");
-      container.className = "_tel_download_button_img_container";
-      container.style.position = "absolute";
-      container.style.width = "100%";
-      container.style.height = "100%";
-      container.style.display = "flex";
-      container.style.justifyContent = "center";
-      container.style.alignItems = "end";
-      const downloadButton = document.createElement("button");
-      downloadButton.className =
-        "btn-icon default__button _tel_download_button_img";
-      downloadButton.innerHTML = downloadIcon;
-      downloadButton.style.marginBottom = "16px";
-      downloadButton.style.backgroundColor = "black";
-      downloadButton.onclick = (e) => {
-        e.stopPropagation();
-        downloadFunction(url);
-      };
-      ele.appendChild(container);
-      container.appendChild(downloadButton);
+      const imageUrl = mediaContainer.querySelector("img.thumbnail").src;
+      createOrReplaceDownloadButton(mediaContainer, imageUrl, 'image');
     }
   }, 500);
 })();

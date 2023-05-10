@@ -1,5 +1,5 @@
 # Telegram Media Downloader
-A Tampermonkey script allowing you to download images and videos from Telegram web even if the group restricts downloading.
+A Tampermonkey script allowing you to download images, GIFs and videos from Telegram web even if the group restricts downloading.
 
 ## Installation
 ### Greasy Fork
@@ -19,8 +19,3 @@ This script will add a download button for every image and video opened on [Tele
 
 <img src="./assets/image_download_button.png" alt="Image download button" height="200"/>
 <img src="./assets/video_download_button.png" alt="Video download button" height="200">
-
-## Known issues to resolve
-1. Not working for GIFs
-
-   GIFs on web are actually presented as video. Need to handle GIFs specially.
