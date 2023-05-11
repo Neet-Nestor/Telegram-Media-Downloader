@@ -41,7 +41,7 @@
         .then((res) => {
           logger.info("get response ", res);
           if (res.status !== 206 && res.status !== 200) {
-            logger.error("Non 206 response was received: " + res.status);
+            logger.error("HTTP response status is not 200 or 206: " + res.status);
             return;
           }
 
