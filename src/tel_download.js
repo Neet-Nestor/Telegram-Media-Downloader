@@ -103,10 +103,22 @@
       logger.info("Finish downloading blobs");
       logger.info("Concatenating blobs and downloading...");
 
-      const fileName =
+      let fileName =
         (Math.random() + 1).toString(36).substring(2, 10) +
         "." +
         _file_extension;
+        
+      // Some video src is in format:
+      // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
+      try {
+        const metadata = JSON.parse(decodeURIComponent(url.split('/')[url.split('/').length - 1]));
+        logger.info(metadata)
+        if (metadata.fileName) {
+          fileName = metadata.fileName;
+        }
+      } catch (e) {
+        // Invalid JSON string, pass extracting filename
+      }
 
       const blob = new Blob(_blobs, { type: "video/mp4" });
       const blobUrl = window.URL.createObjectURL(blob);
@@ -224,12 +236,12 @@
       }
       // 2. Video HTML element detected, could be either GIF or unloaded video
       // container > video[src]
-    } else if (mediaContainer.querySelector("video")) {
+    } else if (mediaContainer.querySelector("video") && mediaContainer.querySelector("video")) {
       const videoUrl = mediaContainer.querySelector("video").src;
       createOrReplaceDownloadButton(mediaContainer, videoUrl, 'video');
       // 3. Image detected
       // container > img.thumbnail
-    } else if (!mediaContainer.querySelector("._tel_download_button_img")) {
+    } else if (!mediaContainer.querySelector("._tel_download_button_img") && mediaContainer.querySelector("img.thumbnail")) {
       // add download button to images
       const imageUrl = mediaContainer.querySelector("img.thumbnail").src;
       createOrReplaceDownloadButton(mediaContainer, imageUrl, 'image');
