@@ -40,8 +40,8 @@
       })
         .then((res) => {
           logger.info("get response ", res);
-          if (res.status !== 206) {
-            logger.error("Non 206 response was received: " + res.status);
+          if (res.status !== 206 && res.status !== 200) {
+            logger.error("HTTP response status is not 200 or 206: " + res.status);
             return;
           }
 
@@ -141,6 +141,70 @@
     logger.info("Download triggered");
   };
 
+  const tel_download_gif = (url) => {
+    let _blobs = [];
+    let _next_offset = 0;
+    let _total_size = null;
+    let _file_extension = "mp4";
+
+    const fetchNextPart = () => {
+      fetch(url, { method: "GET" })
+        .then((res) => {
+        if (res.status !== 206 && res.status !== 200) {
+          console.error("Non 200 response was received: " + res.status);
+          return;
+        }
+
+        const mime = res.headers.get("Content-Type").split(";")[0];
+        if (!mime.startsWith("video/")) {
+          throw "Get non video response with MIME type " + mime;
+        }
+        _file_extension = mime.split("/")[1];
+
+        logger.info(
+          `Get response: ${res.headers.get(
+            "Content-Length"
+          )} bytes data from ${res.headers.get("Content-Range")}`
+        );
+        return res.blob();
+      })
+        .then((resBlob) => {
+        _blobs.push(resBlob);
+      })
+        .then(() => {
+        if (_next_offset < _total_size) {
+          fetchNextPart();
+        }
+        else {
+          save();
+        }
+      })
+        .catch((reason) => {
+        logger.error(reason);
+      });
+
+    };
+
+    const save = () => {
+      console.info("Finish downloading blobs. Concatenating blobs and downloading...");
+      const fileName = (Math.random() + 1).toString(36).substring(2, 10) + "." + _file_extension;
+      const blob = new Blob(_blobs, { type: "video/mp4" });
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      logger.info("Final blob size: " + blob.size + " bytes");
+
+      const a = document.createElement("a");
+      document.body.appendChild(a);
+      a.href = blobUrl;
+      a.download = fileName;
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+      console.info("Download triggered");
+    };
+
+    fetchNextPart();
+  };
   logger.info("Initialized");
 
   // Copied and modified from Heroicons (https://heroicons.com/)
@@ -180,8 +244,16 @@
       }
     } else if (!ele.querySelector("._tel_download_button_img")) {
       // add download button to images
-      const imageUrl = ele.querySelector("img.thumbnail").src;
-
+      const image = ele.querySelector("img.thumbnail");
+      let url, downloadFunction;
+      if(image != null) {
+        url = image.src;
+        downloadFunction = tel_download_image;
+      }
+      else {
+        url = ele.querySelector("video").src;
+        downloadFunction = tel_download_gif;
+      }
       const container = document.createElement("div");
       container.className = "_tel_download_button_img_container";
       container.style.position = "absolute";
@@ -198,7 +270,7 @@
       downloadButton.style.backgroundColor = "black";
       downloadButton.onclick = (e) => {
         e.stopPropagation();
-        tel_download_image(imageUrl);
+        downloadFunction(url);
       };
       ele.appendChild(container);
       container.appendChild(downloadButton);
