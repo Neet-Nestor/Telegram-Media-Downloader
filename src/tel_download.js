@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
-// @version      0.2
+// @version      0.3
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download streaming videos on Telegram
 // @author       Nestor Qin
@@ -107,7 +107,7 @@
         (Math.random() + 1).toString(36).substring(2, 10) +
         "." +
         _file_extension;
-        
+
       // Some video src is in format:
       // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
       try {
