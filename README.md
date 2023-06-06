@@ -14,6 +14,9 @@ A Tampermonkey script allowing you to download images, GIFs and videos from Tele
 
 ![Tampermonkey install button](./assets/tampermonkey_install.png)
 
+## Currently Limitation
+This script currently works on https://web.telegram.org/k/ only. It may not function properly on other version of Telegram webapp such as https://web.telegram.org/a/.
+
 ## Usage
 This script will add a download button for every image and video opened on [Telegram Web](https://web.telegram.org/) as shown below. Note that the download will only happens *after* the entire video has been loaded, so if you are downloading a large file it can take quite a while until you see the the file downloaded and that is expected. 
 
