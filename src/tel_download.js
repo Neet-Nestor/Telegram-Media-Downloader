@@ -157,52 +157,6 @@
 
   logger.info("Initialized");
 
-  // Copied and modified from Heroicons (https://heroicons.com/)
-  const downloadIcon = `
-  <svg xmlns="http://www.w3.org/2000/svg" style="height:24px;width:24px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-  </svg>`;
-
-  const createOrReplaceDownloadButton = (container, url, type) => {
-    if (!container.querySelector("._tel_download_button_img_container")) {
-      const innerContainer = document.createElement("div");
-      innerContainer.className = "_tel_download_button_img_container";
-      innerContainer.style.position = "absolute";
-      innerContainer.style.width = "100%";
-      innerContainer.style.height = "100%";
-      innerContainer.style.display = "flex";
-      innerContainer.style.justifyContent = "center";
-      innerContainer.style.alignItems = "end";
-      container.appendChild(innerContainer);
-    }
-    const innerContainer = container.querySelector('._tel_download_button_img_container');
-    const currentButton = innerContainer && innerContainer.querySelector('._tel_download_button_img');
-    const downloadButton = document.createElement("button");
-    downloadButton.className =
-      "btn-icon default__button _tel_download_button_img";
-    downloadButton.innerHTML = downloadIcon;
-    downloadButton.setAttribute('data-href', url);
-    downloadButton.style.marginBottom = "16px";
-    downloadButton.style.backgroundColor = "black";
-    downloadButton.onclick = (e) => {
-      e.stopPropagation();
-      if (type === 'image') {
-        tel_download_image(url);
-      } else if (type === 'video') {
-        tel_download_video(url);
-      }
-    };
-    if (currentButton === null) {
-      // Create the button
-      container.appendChild(innerContainer);
-      innerContainer.appendChild(downloadButton);
-    } else if (currentButton.getAttribute('data-href') !== url) {
-      // Replace the button
-      innerContainer.innerHTML = '';
-      innerContainer.appendChild(downloadButton);
-    }
-  };
-
   // For webz /a/ webapp
   setInterval(() => {
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
@@ -242,48 +196,71 @@
   // For webk /k/ webapp
   setInterval(() => {
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
-    const mediaContainer = document.querySelector(
+    const mediaContainer = document.querySelector('.media-viewer-whole');
+    if (!mediaContainer) return;
+    const mediaAspecter = mediaContainer.querySelector(
       ".media-viewer-movers .media-viewer-aspecter"
     );
-    if (!mediaContainer) return;
+    const mediaButtons = mediaContainer.querySelector('.media-viewer-topbar .media-viewer-buttons')
+    if (!mediaAspecter || !mediaButtons) return;
 
-    // 1. Video player detected - Video and it has finished initial loading
-    // container > .ckin__player > video[src]
-    if (mediaContainer.querySelector(".ckin__player")) {
-      // remove download img button if there's any
-      document
-        .querySelectorAll("._tel_download_button_img_container")
-        .forEach((e) => e.remove());
+    
+    // If the download button is hidden, we can simply unhide it
+    if (mediaButtons.querySelector('.btn-icon.tgico-download')) {
+      const button = mediaButtons.querySelector('button.btn-icon.tgico-download');
+      if (button.classList.contains('hide')) {
+        button.classList.remove('hide');
+      }
+    }
+    // If forward button is hidden, we can simply unhide it too
+    if (mediaButtons.querySelector('button.btn-icon.tgico-forward')) {
+      const button = mediaButtons.querySelector('button.btn-icon.tgico-forward');
+      if (button.classList.contains('hide')) {
+        button.classList.remove('hide');
+      }
+    }
 
+    if (mediaAspecter.querySelector(".ckin__player")) {
+      // 1. Video player detected - Video and it has finished initial loading
+      // container > .ckin__player > video[src]
+      
       // add download button to videos
-      const controls = mediaContainer.querySelector(
+      const controls = mediaAspecter.querySelector(
         ".default__controls.ckin__controls"
       );
-      const videoUrl = mediaContainer.querySelector("video").src;
+      const videoUrl = mediaAspecter.querySelector("video").src;
 
-      if (controls && !controls.querySelector("._tel_download_button_video")) {
+      if (controls && !controls.querySelector(".tel-download")) {
         const brControls = controls.querySelector(
           ".bottom-controls .right-controls"
         );
         const downloadButton = document.createElement("button");
-        downloadButton.className = "btn-icon default__button _tel_download_button_video";
-        downloadButton.innerHTML = downloadIcon;
+        downloadButton.className = "btn-icon default__button tgico-download tel-download";
         downloadButton.onclick = () => {
           tel_download_video(videoUrl);
         };
         brControls.prepend(downloadButton);
       }
+    } else if (mediaAspecter.querySelector("video") && mediaAspecter.querySelector("video") && !mediaButtons.querySelector('button.btn-icon.tgico-download')) {
       // 2. Video HTML element detected, could be either GIF or unloaded video
       // container > video[src]
-    } else if (mediaContainer.querySelector("video") && mediaContainer.querySelector("video")) {
-      const videoUrl = mediaContainer.querySelector("video").src;
-      createOrReplaceDownloadButton(mediaContainer, videoUrl, 'video');
-      // 3. Image detected
+      const videoUrl = mediaAspecter.querySelector("video").src;
+      const downloadButton = document.createElement('button');
+      downloadButton.className = 'btn-icon tgico-download tel-download';
+      downloadButton.onclick = () => {
+        tel_download_video(videoUrl);
+      }
+      mediaButtons.prepend(downloadButton);
+    } else if (!mediaButtons.querySelector('button.btn-icon.tgico-download')) {
+      // 3. Image without download button detected
       // container > img.thumbnail
-    } else if (!mediaContainer.querySelector("._tel_download_button_img") && mediaContainer.querySelector("img.thumbnail")) {
-      // add download button to images
-      const imageUrl = mediaContainer.querySelector("img.thumbnail").src;
-      createOrReplaceDownloadButton(mediaContainer, imageUrl, 'image');
+      const imageUrl = mediaAspecter.querySelector('img.thumbnail').src;
+      const downloadButton = document.createElement('button');
+      downloadButton.className = 'btn-icon tgico-download tel-download';
+      downloadButton.onclick = () => {
+        tel_download_image(imageUrl);
+      }
+      mediaButtons.prepend(downloadButton);
     }
   }, REFRESH_DELAY);
 })();
