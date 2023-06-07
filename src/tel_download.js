@@ -7,7 +7,9 @@
 // @license      GNU GPLv3
 // @website      https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @match        https://web.telegram.org/k/*
+// @match        https://web.telegram.org/a/*
 // @match        https://webk.telegram.org/*
+// @match        https://webz.telegram.org/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
 // @grant        none
 // ==/UserScript==
@@ -21,8 +23,9 @@
       console.error("[Tel Download] " + message);
     },
   };
-
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
+  const backgroundImageUrlPattern = /background-image:\surl\("blob:(.+)"\)/;
+  const REFRESH_DELAY = 500;
 
   const tel_download_video = (url) => {
     let _blobs = [];
@@ -200,6 +203,43 @@
     }
   };
 
+  // For webz /a/ webapp
+  setInterval(() => {
+    // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
+    const mediaContainer = document.getElementById('MediaViewer');
+    if (!mediaContainer) return;
+
+    
+    // 1. Video player detected - Video and it has finished initial loading
+    // container > .MediaViewerSlides > .MediaViewerSlide > .MediaViewerContent > .VideoPlayer > video[src]
+    const videoPlayers = mediaContainer.querySelectorAll('.VideoPlayer')
+    videoPlayers.forEach((videoPlayer) => {
+      const controls = videoPlayer.querySelector('.VideoPlayerControls');
+      if (!controls) {
+        return;
+      }
+      const videoUrl = videoPlayer.querySelector('video').currentSrc;
+      if (!videoUrl) {
+        return;
+      }
+      const buttons = controls.querySelector('.buttons');
+      if (buttons.querySelector('.Button.tel-download')) {
+        // already added
+        return
+      }
+      const spacer = buttons.querySelector('.spacer');
+      const downloadButton = document.createElement("button");
+      downloadButton.className = "Button tel-download tiny translucent-white round";
+      downloadButton.setAttribute('type', 'button');
+      downloadButton.innerHTML = downloadIcon;
+      downloadButton.onclick = () => {
+        tel_download_video(videoUrl);
+      };
+      spacer.after(downloadButton);
+    })
+  }, REFRESH_DELAY);
+
+  // For webk /k/ webapp
   setInterval(() => {
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(
@@ -245,5 +285,5 @@
       const imageUrl = mediaContainer.querySelector("img.thumbnail").src;
       createOrReplaceDownloadButton(mediaContainer, imageUrl, 'image');
     }
-  }, 500);
+  }, REFRESH_DELAY);
 })();
