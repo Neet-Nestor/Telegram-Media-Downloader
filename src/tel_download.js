@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
-// @version      1.0
+// @version      1.01
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
-// @description  Used to download streaming videos on Telegram
+// @description  Used to download images, GIFs and videos on Telegram webapp even from channels restricting downloading and saving content
 // @author       Nestor Qin
 // @license      GNU GPLv3
 // @website      https://github.com/Neet-Nestor/Telegram-Media-Downloader
@@ -23,7 +23,6 @@
     },
   };
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
-  const backgroundImageUrlPattern = /background-image:\surl\("blob:(.+)"\)/;
   const REFRESH_DELAY = 500;
 
   const tel_download_video = (url) => {
