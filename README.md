@@ -35,3 +35,6 @@ This script should work on both versions of webapp. If you are using another dif
 If you would like to check the current downloading progress, you can [open browser DevTools -> console](https://developer.chrome.com/docs/devtools/open/) and check the text output.
 
 <img src="assets/console_output.png" width="600">
+
+## Support Author
+If you like this script, you can [buy me a coffee](https://www.buymeacoffee.com/neetnestor) :)
