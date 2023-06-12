@@ -37,4 +37,4 @@ If you would like to check the current downloading progress, you can [open brows
 <img src="assets/console_output.png" width="600">
 
 ## Support Author
-If you like this script, you can [buy me a coffee](https://www.buymeacoffee.com/neetnestor) :)
+If you like this script, you can support me via [Venmo](https://venmo.com/u/NeetNestor) or [buy me a coffee](https://ko-fi.com/neetnestor) :)
