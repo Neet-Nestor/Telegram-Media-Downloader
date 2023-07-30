@@ -12,10 +12,15 @@
 // @match        https://webk.telegram.org/*
 // @match        https://webz.telegram.org/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
-// @grant        none
+// @grant        window.onurlchange
 // ==/UserScript==
 
 (function () {
+  let audio_links = new Map()
+  window.addEventListener('urlchange', (info) => {
+    audio_links = new Map()
+  })
+  
   const logger = {
     info: (message) => {
       console.log("[Tel Download] " + message);
@@ -138,6 +143,60 @@
       window.URL.revokeObjectURL(blobUrl);
 
       logger.info("Download triggered");
+    };
+
+    fetchNextPart();
+  };
+
+  const tel_download_audio = (url, _chatName, _sender) => {
+    let _blobs = [];
+    let _file_extension = ".ogg";
+
+    const fetchNextPart = () => {
+      fetch(url, { method: "GET"} )
+        .then((res) => {
+        if (res.status !== 206 && res.status !== 200) {
+          console.error("Non 200/206 response was received: " + res.status);
+          return;
+        }
+
+        const mime = res.headers.get("Content-Type").split(";")[0];
+        if (!mime.startsWith("audio/")) {
+          console.error("Get non audio response with MIME type " + mime);
+          throw "Get non audio response with MIME type " + mime;
+        }
+        return res.blob();
+      })
+        .then((resBlob) => {
+        _blobs.push(resBlob);
+      })
+        .then(() => {
+        save();
+      })
+        .catch((reason) => {
+        console.error(reason);
+      });
+    };
+
+    const save = () => {
+      console.info("Finish downloading blobs. Concatenating blobs and downloading...");
+      const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
+
+      let blob = new Blob(_blobs, { type: "audio/ogg" });
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      console.info("Final blob size in bytes: " + blob.size);
+      blob = 0;
+
+      const a = document.createElement("a");
+      document.body.appendChild(a);
+      a.href = blobUrl;
+      a.download = fileName;
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+
+      console.info("Download triggered");
     };
 
     fetchNextPart();
@@ -271,6 +330,32 @@
 
   // For webk /k/ webapp
   setInterval(() => {
+    const audios = document.getElementsByTagName("audio-element")
+    for(let a = 0; a < audios.length; a++) {
+      const link = audio_links.get(audios[a].audio.getAttribute("src"));
+      if (link === undefined) {
+        audio_links.set(audios[a].audio.getAttribute("src"), 0);
+        const container = document.createElement("div");
+        container.className = "_tel_download_button_voice_container";
+        container.style.position = "absolute";
+        container.style.width = "100%";
+        container.style.height = "100%";
+        container.style.display = "flex";
+        container.style.justifyContent = "center";
+        container.style.alignItems = "end";
+        const downloadButton = document.createElement("button");
+        downloadButton.className = "btn-icon default__button tgico-download tel-download";
+        downloadButton.style.marginBottom = "16px";
+        downloadButton.style.backgroundColor = "black";
+        downloadButton.onclick = (e) => {
+          e.stopPropagation();
+          tel_download_audio(audios[a].audio.getAttribute("src"));
+        };
+        audios[a].closest(".bubble").appendChild(container);
+        container.appendChild(downloadButton);
+      }
+    }
+
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(".media-viewer-whole");
     if (!mediaContainer) return;
