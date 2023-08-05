@@ -324,7 +324,14 @@
         downloadButton.onclick = () => {
           tel_download_video(videoUrl);
         };
+        const openInNewTab = document.createElement("button");
+        openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+        openInNewTab.style.backgroundColor = "red";
+        openInNewTab.onclick = (e) => {
+          window.open(videoUrl);
+        };
         brControls.prepend(downloadButton);
+        brControls.prepend(openInNewTab);
       }
     } else if (
       mediaAspecter.querySelector("video") &&
@@ -332,7 +339,9 @@
       !mediaButtons.querySelector("button.btn-icon.tgico-download")
     ) {
       // 2. Video HTML element detected, could be either GIF or unloaded video
+      
       // container > video[src]
+
       const videoUrl = mediaAspecter.querySelector("video").src;
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
@@ -342,7 +351,14 @@
       downloadButton.onclick = () => {
         tel_download_video(videoUrl);
       };
+      const openInNewTab = document.createElement("button");
+      openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+      openInNewTab.style.backgroundColor = "red";
+      openInNewTab.onclick = (e) => {
+        window.open(videoUrl);
+      };
       mediaButtons.prepend(downloadButton);
+      mediaButtons.prepend(openInNewTab);
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
       // 3. Image without download button detected
       // container > img.thumbnail
@@ -355,7 +371,14 @@
       downloadButton.onclick = () => {
         tel_download_image(imageUrl);
       };
+      const openInNewTab = document.createElement("button");
+      openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+      openInNewTab.style.backgroundColor = "red";
+      openInNewTab.onclick = (e) => {
+        window.open(imageUrl);
+      };
       mediaButtons.prepend(downloadButton);
+      mediaButtons.prepend(openInNewTab);
     }
   }, REFRESH_DELAY);
 })();
