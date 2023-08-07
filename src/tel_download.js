@@ -379,6 +379,15 @@
       };
       mediaButtons.prepend(downloadButton);
       mediaButtons.prepend(openInNewTab);
+    } else if(document.getElementsByClassName("media-viewer-buttons")[0].getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0] === undefined){
+      const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
+      const openInNewTab = document.createElement("button");
+      openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+      openInNewTab.style.backgroundColor = "red";
+      openInNewTab.onclick = (e) => {
+        window.open(imageUrl);
+        };
+      mediaButtons.prepend(openInNewTab);
     }
   }, REFRESH_DELAY);
 })();
