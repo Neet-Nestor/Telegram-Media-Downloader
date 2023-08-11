@@ -324,6 +324,9 @@
         downloadButton.onclick = () => {
           tel_download_video(videoUrl);
         };
+        if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+          mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+        }
         const openInNewTab = document.createElement("button");
         openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
         openInNewTab.style.backgroundColor = "red";
@@ -339,9 +342,7 @@
       !mediaButtons.querySelector("button.btn-icon.tgico-download")
     ) {
       // 2. Video HTML element detected, could be either GIF or unloaded video
-      
       // container > video[src]
-
       const videoUrl = mediaAspecter.querySelector("video").src;
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
@@ -351,6 +352,9 @@
       downloadButton.onclick = () => {
         tel_download_video(videoUrl);
       };
+      if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+        mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+      }
       const openInNewTab = document.createElement("button");
       openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
       openInNewTab.style.backgroundColor = "red";
@@ -371,6 +375,9 @@
       downloadButton.onclick = () => {
         tel_download_image(imageUrl);
       };
+      if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+        mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+      }
       const openInNewTab = document.createElement("button");
       openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
       openInNewTab.style.backgroundColor = "red";
@@ -381,12 +388,15 @@
       mediaButtons.prepend(openInNewTab);
     } else if(document.getElementsByClassName("media-viewer-buttons")[0].getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0] === undefined){
       const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
+      if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+        mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+      }
       const openInNewTab = document.createElement("button");
       openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
       openInNewTab.style.backgroundColor = "red";
       openInNewTab.onclick = (e) => {
         window.open(imageUrl);
-        };
+      };
       mediaButtons.prepend(openInNewTab);
     }
   }, REFRESH_DELAY);
