@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.02
+// @version      1.03
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
-// @description  Used to download images, GIFs and videos on Telegram webapp even from channels restricting downloading and saving content
-// @description:zh-cn 从禁止下载的Telegram频道中下载图片和视频
+// @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
+// @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
 // @author       Nestor Qin
 // @license      GNU GPLv3
 // @website      https://github.com/Neet-Nestor/Telegram-Media-Downloader
@@ -12,15 +12,9 @@
 // @match        https://webk.telegram.org/*
 // @match        https://webz.telegram.org/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
-// @grant        window.onurlchange
 // ==/UserScript==
 
 (function () {
-  let audio_links = new Map()
-  window.addEventListener('urlchange', (info) => {
-    audio_links = new Map()
-  })
-  
   const logger = {
     info: (message) => {
       console.log("[Tel Download] " + message);
@@ -153,34 +147,37 @@
     let _file_extension = ".ogg";
 
     const fetchNextPart = () => {
-      fetch(url, { method: "GET"} )
+      fetch(url, { method: "GET" })
         .then((res) => {
-        if (res.status !== 206 && res.status !== 200) {
-          console.error("Non 200/206 response was received: " + res.status);
-          return;
-        }
+          if (res.status !== 206 && res.status !== 200) {
+            console.error("Non 200/206 response was received: " + res.status);
+            return;
+          }
 
-        const mime = res.headers.get("Content-Type").split(";")[0];
-        if (!mime.startsWith("audio/")) {
-          console.error("Get non audio response with MIME type " + mime);
-          throw "Get non audio response with MIME type " + mime;
-        }
-        return res.blob();
-      })
+          const mime = res.headers.get("Content-Type").split(";")[0];
+          if (!mime.startsWith("audio/")) {
+            console.error("Get non audio response with MIME type " + mime);
+            throw "Get non audio response with MIME type " + mime;
+          }
+          return res.blob();
+        })
         .then((resBlob) => {
-        _blobs.push(resBlob);
-      })
+          _blobs.push(resBlob);
+        })
         .then(() => {
-        save();
-      })
+          save();
+        })
         .catch((reason) => {
-        console.error(reason);
-      });
+          console.error(reason);
+        });
     };
 
     const save = () => {
-      console.info("Finish downloading blobs. Concatenating blobs and downloading...");
-      const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
+      console.info(
+        "Finish downloading blobs. Concatenating blobs and downloading..."
+      );
+      const fileName =
+        (Math.random() + 1).toString(36).substring(2, 10) + _file_extension;
 
       let blob = new Blob(_blobs, { type: "audio/ogg" });
       const blobUrl = window.URL.createObjectURL(blob);
@@ -221,15 +218,19 @@
   // For webz /a/ webapp
   setInterval(() => {
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
-    const mediaContainer = document.querySelector("#MediaViewer .MediaViewerSlide--active");
+    const mediaContainer = document.querySelector(
+      "#MediaViewer .MediaViewerSlide--active"
+    );
     if (!mediaContainer) return;
     const mediaViewerActions = document.querySelector(
       "#MediaViewer .MediaViewerActions"
     );
     if (!mediaViewerActions) return;
 
-    const videoPlayer = mediaContainer.querySelector(".MediaViewerContent > .VideoPlayer");
-    const img = mediaContainer.querySelector('.MediaViewerContent > div > img');
+    const videoPlayer = mediaContainer.querySelector(
+      ".MediaViewerContent > .VideoPlayer"
+    );
+    const img = mediaContainer.querySelector(".MediaViewerContent > div > img");
     // 1. Video player detected - Video or GIF
     // container > .MediaViewerSlides > .MediaViewerSlide > .MediaViewerContent > .VideoPlayer > video[src]
     if (videoPlayer) {
@@ -330,11 +331,14 @@
 
   // For webk /k/ webapp
   setInterval(() => {
-    const audios = document.getElementsByTagName("audio-element")
-    for(let a = 0; a < audios.length; a++) {
-      const link = audio_links.get(audios[a].audio.getAttribute("src"));
-      if (link === undefined) {
-        audio_links.set(audios[a].audio.getAttribute("src"), 0);
+    /* Voice Message */
+    const voiceMessages = document.querySelectorAll("audio-element:has(.audio-waveform)");
+    voiceMessages.forEach((voiceMessage) => {
+      if (voiceMessage.querySelector('_tel_download_button_voice_container')) {
+        return; /* Skip if there's already a download button */
+      }
+      const link = voiceMessage.audio.getAttribute("src");
+      if (link) {
         const container = document.createElement("div");
         container.className = "_tel_download_button_voice_container";
         container.style.position = "absolute";
@@ -344,17 +348,18 @@
         container.style.justifyContent = "center";
         container.style.alignItems = "end";
         const downloadButton = document.createElement("button");
-        downloadButton.className = "btn-icon default__button tgico-download tel-download";
+        downloadButton.className =
+          "btn-icon default__button tgico-download tel-download";
         downloadButton.style.marginBottom = "16px";
         downloadButton.style.backgroundColor = "black";
         downloadButton.onclick = (e) => {
           e.stopPropagation();
-          tel_download_audio(audios[a].audio.getAttribute("src"));
+          tel_download_audio(voiceMessage.audio.getAttribute("src"));
         };
-        audios[a].closest(".bubble").appendChild(container);
+        voiceMessage.closest(".bubble").appendChild(container);
         container.appendChild(downloadButton);
       }
-    }
+    });
 
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(".media-viewer-whole");
