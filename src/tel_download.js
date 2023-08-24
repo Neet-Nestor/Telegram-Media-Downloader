@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.031
+// @version      1.04
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -16,11 +16,15 @@
 
 (function () {
   const logger = {
-    info: (message) => {
-      console.log("[Tel Download] " + message);
+    info: (message, fileName = null) => {
+      console.log(
+        `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`
+      );
     },
-    error: (message) => {
-      console.error("[Tel Download] " + message);
+    error: (message, fileName = null) => {
+      console.error(
+        `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`
+      );
     },
   };
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
@@ -32,6 +36,23 @@
     let _total_size = null;
     let _file_extension = "mp4";
 
+    let fileName =
+      (Math.random() + 1).toString(36).substring(2, 10) + "." + _file_extension;
+
+    // Some video src is in format:
+    // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
+    try {
+      const metadata = JSON.parse(
+        decodeURIComponent(url.split("/")[url.split("/").length - 1])
+      );
+      logger.info(metadata);
+      if (metadata.fileName) {
+        fileName = metadata.fileName;
+      }
+    } catch (e) {
+      // Invalid JSON string, pass extracting fileName
+    }
+
     const fetchNextPart = () => {
       fetch(url, {
         method: "GET",
@@ -40,18 +61,24 @@
         },
       })
         .then((res) => {
-          logger.info("get response ", res);
           if (![200, 206].includes(res.status)) {
-            logger.error("Non 200/206 response was received: " + res.status);
+            logger.error(
+              "Non 200/206 response was received: " + res.status,
+              fileName
+            );
             return;
           }
 
           const mime = res.headers.get("Content-Type").split(";")[0];
           if (!mime.startsWith("video/")) {
-            logger.error("Get non video response with MIME type " + mime);
+            logger.error(
+              "Get non video response with MIME type " + mime,
+              fileName
+            );
             throw "Get non video response with MIME type " + mime;
           }
           _file_extension = mime.split("/")[1];
+          fileName = fileName.substring(0, fileName.indexOf('.') + 1) + _file_extension;
 
           const match = res.headers
             .get("Content-Range")
@@ -62,13 +89,13 @@
           const totalSize = parseInt(match[3]);
 
           if (startOffset !== _next_offset) {
-            logger.error("Gap detected between responses.");
-            logger.info("Last offset: " + _next_offset);
-            logger.info("New start offset " + match[1]);
+            logger.error("Gap detected between responses.", fileName);
+            logger.info("Last offset: " + _next_offset, fileName);
+            logger.info("New start offset " + match[1], fileName);
             throw "Gap detected between responses.";
           }
           if (_total_size && totalSize !== _total_size) {
-            logger.error("Total size differs");
+            logger.error("Total size differs", fileName);
             throw "Total size differs";
           }
 
@@ -78,10 +105,12 @@
           logger.info(
             `Get response: ${res.headers.get(
               "Content-Length"
-            )} bytes data from ${res.headers.get("Content-Range")}`
+            )} bytes data from ${res.headers.get("Content-Range")}`,
+            fileName
           );
           logger.info(
-            `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`
+            `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`,
+            fileName
           );
           return res.blob();
         })
@@ -96,37 +125,18 @@
           }
         })
         .catch((reason) => {
-          logger.error(reason);
+          logger.error(reason, fileName);
         });
     };
 
     const save = () => {
-      logger.info("Finish downloading blobs");
-      logger.info("Concatenating blobs and downloading...");
-
-      let fileName =
-        (Math.random() + 1).toString(36).substring(2, 10) +
-        "." +
-        _file_extension;
-
-      // Some video src is in format:
-      // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
-      try {
-        const metadata = JSON.parse(
-          decodeURIComponent(url.split("/")[url.split("/").length - 1])
-        );
-        logger.info(metadata);
-        if (metadata.fileName) {
-          fileName = metadata.fileName;
-        }
-      } catch (e) {
-        // Invalid JSON string, pass extracting filename
-      }
+      logger.info("Finish downloading blobs", fileName);
+      logger.info("Concatenating blobs and downloading...", fileName);
 
       const blob = new Blob(_blobs, { type: "video/mp4" });
       const blobUrl = window.URL.createObjectURL(blob);
 
-      logger.info("Final blob size: " + blob.size + " bytes");
+      logger.info("Final blob size: " + blob.size + " bytes", fileName);
 
       const a = document.createElement("a");
       document.body.appendChild(a);
@@ -136,7 +146,7 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
-      logger.info("Download triggered");
+      logger.info("Download triggered", fileName);
     };
 
     fetchNextPart();
@@ -145,18 +155,26 @@
   const tel_download_audio = (url, _chatName, _sender) => {
     let _blobs = [];
     let _file_extension = ".ogg";
+    const fileName =
+      (Math.random() + 1).toString(36).substring(2, 10) + _file_extension; // assume jpeg
 
     const fetchNextPart = () => {
       fetch(url, { method: "GET" })
         .then((res) => {
           if (res.status !== 206 && res.status !== 200) {
-            console.error("Non 200/206 response was received: " + res.status);
+            logger.error(
+              "Non 200/206 response was received: " + res.status,
+              fileName
+            );
             return;
           }
 
           const mime = res.headers.get("Content-Type").split(";")[0];
           if (!mime.startsWith("audio/")) {
-            console.error("Get non audio response with MIME type " + mime);
+            logger.error(
+              "Get non audio response with MIME type " + mime,
+              fileName
+            );
             throw "Get non audio response with MIME type " + mime;
           }
           return res.blob();
@@ -168,21 +186,19 @@
           save();
         })
         .catch((reason) => {
-          console.error(reason);
+          logger.error(reason, fileName);
         });
     };
 
     const save = () => {
-      console.info(
-        "Finish downloading blobs. Concatenating blobs and downloading..."
+      logger.info(
+        "Finish downloading blobs. Concatenating blobs and downloading...",
+        fileName
       );
-      const fileName =
-        (Math.random() + 1).toString(36).substring(2, 10) + _file_extension;
-
       let blob = new Blob(_blobs, { type: "audio/ogg" });
       const blobUrl = window.URL.createObjectURL(blob);
 
-      console.info("Final blob size in bytes: " + blob.size);
+      logger.info("Final blob size in bytes: " + blob.size, fileName);
       blob = 0;
 
       const a = document.createElement("a");
@@ -193,7 +209,7 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
-      console.info("Download triggered");
+      logger.info("Download triggered", fileName);
     };
 
     fetchNextPart();
@@ -210,7 +226,7 @@
     a.click();
     document.body.removeChild(a);
 
-    logger.info("Download triggered");
+    logger.info("Download triggered", fileName);
   };
 
   logger.info("Initialized");
