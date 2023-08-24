@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.03
+// @version      1.031
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -332,9 +332,12 @@
   // For webk /k/ webapp
   setInterval(() => {
     /* Voice Message */
-    const voiceMessages = document.querySelectorAll("audio-element:has(.audio-waveform)");
+    const voiceMessages = document.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
-      if (voiceMessage.querySelector('_tel_download_button_voice_container')) {
+      if (voiceMessage.querySelector(".audio-waveform") === null) {
+        return; /* Skip non-voice message */
+      }
+      if (voiceMessage.querySelector("_tel_download_button_voice_container")) {
         return; /* Skip if there's already a download button */
       }
       const link = voiceMessage.audio.getAttribute("src");
