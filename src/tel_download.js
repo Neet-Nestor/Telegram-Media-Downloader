@@ -152,53 +152,85 @@
     fetchNextPart();
   };
 
-  const tel_download_audio = (url, _chatName, _sender) => {
+  const tel_download_audio = (url) => {
     let _blobs = [];
     let _file_extension = ".ogg";
-    const fileName =
-      (Math.random() + 1).toString(36).substring(2, 10) + _file_extension; // assume jpeg
+    let _next_offset = 0
+    let _total_size = null;
+    console.log(url)
 
     const fetchNextPart = () => {
-      fetch(url, { method: "GET" })
+      fetch(url, {
+        method: "GET",
+        headers: {
+          Range: `bytes=${_next_offset}-`,
+        },
+      })
         .then((res) => {
-          if (res.status !== 206 && res.status !== 200) {
-            logger.error(
-              "Non 200/206 response was received: " + res.status,
-              fileName
-            );
-            return;
-          }
+        if (res.status !== 206 && res.status !== 200) {
+          console.error("Non 200/206 response was received: " + res.status);
+          return;
+        }
 
-          const mime = res.headers.get("Content-Type").split(";")[0];
-          if (!mime.startsWith("audio/")) {
-            logger.error(
-              "Get non audio response with MIME type " + mime,
-              fileName
-            );
-            throw "Get non audio response with MIME type " + mime;
-          }
-          return res.blob();
-        })
+        const mime = res.headers.get("Content-Type").split(";")[0];
+        if (!mime.startsWith("audio/")) {
+          console.error("Get non audio response with MIME type " + mime);
+          throw "Get non audio response with MIME type " + mime;
+        }
+
+        const match = res.headers
+        .get("Content-Range")
+        .match(contentRangeRegex);
+
+        const startOffset = parseInt(match[1]);
+        const endOffset = parseInt(match[2]);
+        const totalSize = parseInt(match[3]);
+
+        if (startOffset !== _next_offset) {
+          logger.error("Gap detected between responses.");
+          logger.info("Last offset: " + _next_offset);
+          logger.info("New start offset " + match[1]);
+          throw "Gap detected between responses.";
+        }
+        if (_total_size && totalSize !== _total_size) {
+          logger.error("Total size differs");
+          throw "Total size differs";
+        }
+
+        _next_offset = endOffset + 1;
+        _total_size = totalSize;
+
+        logger.info(
+          `Get response: ${res.headers.get(
+            "Content-Length"
+          )} bytes data from ${res.headers.get("Content-Range")}`
+        );
+
+        return res.blob();
+      })
         .then((resBlob) => {
-          _blobs.push(resBlob);
-        })
+        _blobs.push(resBlob);
+      })
         .then(() => {
+        if (_next_offset < _total_size) {
+          fetchNextPart();
+        } else {
           save();
-        })
+        }
+      })
         .catch((reason) => {
-          logger.error(reason, fileName);
-        });
+        console.error(reason);
+      });
     };
 
     const save = () => {
-      logger.info(
-        "Finish downloading blobs. Concatenating blobs and downloading...",
-        fileName
-      );
+      console.info("Finish downloading blobs. Concatenating blobs and downloading...");
+      const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
+
       let blob = new Blob(_blobs, { type: "audio/ogg" });
       const blobUrl = window.URL.createObjectURL(blob);
 
-      logger.info("Final blob size in bytes: " + blob.size, fileName);
+      console.info("Final blob size in bytes: " + blob.size);
       blob = 0;
 
       const a = document.createElement("a");
@@ -209,7 +241,7 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
-      logger.info("Download triggered", fileName);
+      console.info("Download triggered");
     };
 
     fetchNextPart();
@@ -351,32 +383,59 @@
     const voiceMessages = document.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
       if (voiceMessage.querySelector(".audio-waveform") === null) {
-        return; /* Skip non-voice message */
+        if (voiceMessage.querySelector("_tel_download_button_voice_container")) {
+          return; /* Skip if there's already a download button */
+        }
+        const link = voiceMessage.audio.getAttribute("src");
+        if(link) {
+          const container = document.createElement("div");
+          container.className = "_tel_download_button_voice_container";
+          container.style.position = "absolute";
+          container.style.width = "100%";
+          container.style.height = "100%";
+          container.style.display = "flex";
+          container.style.justifyContent = "center";
+          container.style.alignItems = "end";
+
+          const downloadButton = document.createElement("button");
+          downloadButton.className = "btn-icon default__button tgico-download tel-download";
+          downloadButton.style.marginBottom = "16px";
+          downloadButton.style.backgroundColor = "black";
+
+          downloadButton.onclick = (e) => {
+            e.stopPropagation();
+            tel_download_audio(link);
+          };
+          voiceMessage.closest(".bubble").appendChild(container);
+          container.appendChild(downloadButton);
+        }
       }
-      if (voiceMessage.querySelector("_tel_download_button_voice_container")) {
-        return; /* Skip if there's already a download button */
-      }
-      const link = voiceMessage.audio.getAttribute("src");
-      if (link) {
-        const container = document.createElement("div");
-        container.className = "_tel_download_button_voice_container";
-        container.style.position = "absolute";
-        container.style.width = "100%";
-        container.style.height = "100%";
-        container.style.display = "flex";
-        container.style.justifyContent = "center";
-        container.style.alignItems = "end";
-        const downloadButton = document.createElement("button");
-        downloadButton.className =
-          "btn-icon default__button tgico-download tel-download";
-        downloadButton.style.marginBottom = "16px";
-        downloadButton.style.backgroundColor = "black";
-        downloadButton.onclick = (e) => {
-          e.stopPropagation();
-          tel_download_audio(voiceMessage.audio.getAttribute("src"));
-        };
-        voiceMessage.closest(".bubble").appendChild(container);
-        container.appendChild(downloadButton);
+      else {
+        if (voiceMessage.querySelector("_tel_download_button_voice_container")) {
+          return; /* Skip if there's already a download button */
+        }
+        const link = voiceMessage.audio.getAttribute("src");
+        if (link) {
+          const container = document.createElement("div");
+          container.className = "_tel_download_button_voice_container";
+          container.style.position = "absolute";
+          container.style.width = "100%";
+          container.style.height = "100%";
+          container.style.display = "flex";
+          container.style.justifyContent = "center";
+          container.style.alignItems = "end";
+          const downloadButton = document.createElement("button");
+          downloadButton.className =
+            "btn-icon default__button tgico-download tel-download";
+          downloadButton.style.marginBottom = "16px";
+          downloadButton.style.backgroundColor = "black";
+          downloadButton.onclick = (e) => {
+            e.stopPropagation();
+            tel_download_audio(voiceMessage.audio.getAttribute("src"));
+          };
+          voiceMessage.closest(".bubble").appendChild(container);
+          container.appendChild(downloadButton);
+        }
       }
     });
 
