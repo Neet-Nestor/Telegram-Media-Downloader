@@ -157,7 +157,6 @@
     let _file_extension = ".ogg";
     let _next_offset = 0
     let _total_size = null;
-    console.log(url)
 
     const fetchNextPart = () => {
       fetch(url, {
@@ -168,13 +167,13 @@
       })
         .then((res) => {
         if (res.status !== 206 && res.status !== 200) {
-          console.error("Non 200/206 response was received: " + res.status);
+          logger.error("Non 200/206 response was received: " + res.status);
           return;
         }
 
         const mime = res.headers.get("Content-Type").split(";")[0];
         if (!mime.startsWith("audio/")) {
-          console.error("Get non audio response with MIME type " + mime);
+          logger.error("Get non audio response with MIME type " + mime);
           throw "Get non audio response with MIME type " + mime;
         }
 
@@ -219,18 +218,18 @@
         }
       })
         .catch((reason) => {
-        console.error(reason);
+        logger.error(reason);
       });
     };
 
     const save = () => {
-      console.info("Finish downloading blobs. Concatenating blobs and downloading...");
+      logger.info("Finish downloading blobs. Concatenating blobs and downloading...");
       const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
 
       let blob = new Blob(_blobs, { type: "audio/ogg" });
       const blobUrl = window.URL.createObjectURL(blob);
 
-      console.info("Final blob size in bytes: " + blob.size);
+      logger.info("Final blob size in bytes: " + blob.size);
       blob = 0;
 
       const a = document.createElement("a");
@@ -241,7 +240,7 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
-      console.info("Download triggered");
+      logger.info("Download triggered");
     };
 
     fetchNextPart();
