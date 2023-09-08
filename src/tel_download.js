@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.04
+// @version      1.041
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -427,6 +427,7 @@
         const downloadButton = document.createElement("button");
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
+        downloadButton.innerHTML = '<span class="tgico button-icon">\uE93D</span>';
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -445,6 +446,7 @@
       const videoUrl = mediaAspecter.querySelector("video").src;
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
+      downloadButton.innerHTML = '<span class="tgico button-icon">\uE93D</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -458,6 +460,7 @@
       const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
+      downloadButton.innerHTML = '<span class="tgico button-icon">\uE93D</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
