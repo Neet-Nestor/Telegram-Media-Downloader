@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.042
+// @version      1.043
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -51,6 +51,7 @@
     } catch (e) {
       // Invalid JSON string, pass extracting fileName
     }
+    logger.info(`URL: ${url}`, fileName);
 
     const fetchNextPart = () => {
       fetch(url, {
@@ -58,26 +59,19 @@
         headers: {
           Range: `bytes=${_next_offset}-`,
         },
+        "User-Agent": "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
       })
         .then((res) => {
           if (![200, 206].includes(res.status)) {
-            logger.error(
-              "Non 200/206 response was received: " + res.status,
-              fileName
-            );
-            return;
+            throw new Error("Non 200/206 response was received: " + res.status);
           }
-
           const mime = res.headers.get("Content-Type").split(";")[0];
           if (!mime.startsWith("video/")) {
-            logger.error(
-              "Get non video response with MIME type " + mime,
-              fileName
-            );
-            throw "Get non video response with MIME type " + mime;
+            throw new Error("Get non video response with MIME type " + mime);
           }
           _file_extension = mime.split("/")[1];
-          fileName = fileName.substring(0, fileName.indexOf('.') + 1) + _file_extension;
+          fileName =
+            fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
 
           const match = res.headers
             .get("Content-Range")
@@ -117,6 +111,10 @@
           _blobs.push(resBlob);
         })
         .then(() => {
+          if (!_total_size) {
+            throw new Error("_total_size is NULL");
+          }
+
           if (_next_offset < _total_size) {
             fetchNextPart();
           } else {
@@ -426,7 +424,8 @@
         const downloadButton = document.createElement("button");
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
-        downloadButton.innerHTML = '<span class="tgico button-icon">\uE93D</span>';
+        downloadButton.innerHTML =
+          '<span class="tgico button-icon">\uE93D</span>';
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -445,7 +444,8 @@
       const videoUrl = mediaAspecter.querySelector("video").src;
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
-      downloadButton.innerHTML = '<span class="tgico button-icon">\uE93D</span>';
+      downloadButton.innerHTML =
+        '<span class="tgico button-icon">\uE93D</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -465,7 +465,8 @@
       }
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
-      downloadButton.innerHTML = '<span class="tgico button-icon">\uE93D</span>';
+      downloadButton.innerHTML =
+        '<span class="tgico button-icon">\uE93D</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
