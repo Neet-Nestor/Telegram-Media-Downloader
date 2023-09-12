@@ -65,11 +65,11 @@
           if (![200, 206].includes(res.status)) {
             throw new Error("Non 200/206 response was received: " + res.status);
           }
-
           const mime = res.headers.get("Content-Type").split(";")[0];
           if (!mime.startsWith("video/")) {
             throw new Error("Get non video response with MIME type " + mime);
           }
+          _file_extension = mime.split("/")[1];
           fileName =
             fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
 
@@ -400,6 +400,7 @@
       if (!bubble || bubble.querySelector("._tel_download_button_voice_container")) {
         return; /* Skip if there's already a download button */
       }
+      const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
       if (link) {
         pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
       }
