@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.04
+// @version      1.043
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -30,18 +30,6 @@
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
 
-  const downloadByGeneratedLink = (fileUrl, fileName) => {
-    const a = document.createElement("a");
-    document.body.appendChild(a);
-    a.href = fileUrl;
-    a.download = fileName;
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(fileUrl);
-
-    logger.info("Download triggered", fileName);
-  };
-
   const tel_download_video = (url) => {
     let _blobs = [];
     let _next_offset = 0;
@@ -57,13 +45,13 @@
       const metadata = JSON.parse(
         decodeURIComponent(url.split("/")[url.split("/").length - 1])
       );
-      logger.info(metadata);
       if (metadata.fileName) {
         fileName = metadata.fileName;
       }
     } catch (e) {
       // Invalid JSON string, pass extracting fileName
     }
+    logger.info(`URL: ${url}`, fileName);
 
     const fetchNextPart = () => {
       fetch(url, {
@@ -71,26 +59,19 @@
         headers: {
           Range: `bytes=${_next_offset}-`,
         },
+        "User-Agent": "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
       })
         .then((res) => {
           if (![200, 206].includes(res.status)) {
-            logger.error(
-              "Non 200/206 response was received: " + res.status,
-              fileName
-            );
-            return;
+            throw new Error("Non 200/206 response was received: " + res.status);
           }
 
           const mime = res.headers.get("Content-Type").split(";")[0];
           if (!mime.startsWith("video/")) {
-            logger.error(
-              "Get non video response with MIME type " + mime,
-              fileName
-            );
-            throw "Get non video response with MIME type " + mime;
+            throw new Error("Get non video response with MIME type " + mime);
           }
-          _file_extension = mime.split("/")[1];
-          fileName = fileName.substring(0, fileName.indexOf('.') + 1) + _file_extension;
+          fileName =
+            fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
 
           const match = res.headers
             .get("Content-Range")
@@ -130,6 +111,10 @@
           _blobs.push(resBlob);
         })
         .then(() => {
+          if (!_total_size) {
+            throw new Error("_total_size is NULL");
+          }
+
           if (_next_offset < _total_size) {
             fetchNextPart();
           } else {
@@ -150,7 +135,15 @@
 
       logger.info("Final blob size: " + blob.size + " bytes", fileName);
 
-      downloadByGeneratedLink(blobUrl, fileName)
+      const a = document.createElement("a");
+      document.body.appendChild(a);
+      a.href = blobUrl;
+      a.download = fileName;
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+
+      logger.info("Download triggered", fileName);
     };
 
     fetchNextPart();
@@ -243,7 +236,17 @@
 
       logger.info("Final blob size in bytes: " + blob.size, fileName);
 
-      downloadByGeneratedLink(blobUrl, fileName);
+      blob = 0;
+
+      const a = document.createElement("a");
+      document.body.appendChild(a);
+      a.href = blobUrl;
+      a.download = fileName;
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+
+      logger.info("Download triggered", fileName);
     };
 
     fetchNextPart();
@@ -380,6 +383,8 @@
     if (pinnedAudio) {
       dataMid = pinnedAudio.getAttribute("data-mid");
       downloadButtonPinnedAudio.className = "btn-icon tgico-download _tel_download_button_pinned_container";
+      downloadButtonPinnedAudio.innerHTML =
+          '<span class="tgico button-icon">\uE93D</span>';
     }
     const voiceMessages = document.body.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
@@ -396,26 +401,7 @@
         return; /* Skip if there's already a download button */
       }
       if (link) {
-        const container = document.createElement("div");
-        container.className = "_tel_download_button_voice_container";
-        container.style.display = "flex";
-        container.style.justifyContent = "center";
-        container.style.alignItems = "end";
-        container.style.zIndex = "2";
-        container.style.order = "0";
-        container.classList.add("bubble-content-wrapper");
-
-        const downloadButton = document.createElement("button");
-        downloadButton.className = "btn-icon default__button tgico-download tel-download";
-        downloadButton.style.marginBottom = "16px";
-        downloadButton.style.backgroundColor = "black";
-
-        downloadButton.onclick = (e) => {
-          e.stopPropagation();
-          tel_download_audio(link);
-        };
-        voiceMessage.closest(".bubble").appendChild(container);
-        container.appendChild(downloadButton);
+        pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
       }
     });
     if (pinnedAudio && !downloadButtonPinnedAudio.parentNode) {
@@ -470,6 +456,8 @@
         const downloadButton = document.createElement("button");
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
+        downloadButton.innerHTML =
+          '<span class="tgico button-icon">\uE93D</span>';
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -488,6 +476,8 @@
       const videoUrl = mediaAspecter.querySelector("video").src;
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
+      downloadButton.innerHTML =
+          '<span class="tgico button-icon">\uE93D</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -498,9 +488,17 @@
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
       // 3. Image without download button detected
       // container > img.thumbnail
+      if (!mediaAspecter.querySelector("img.thumbnail")) {
+        return;
+      }
       const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
+      if (!imageUrl) {
+        return;
+      }
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
+      downloadButton.innerHTML =
+        '<span class="tgico button-icon">\uE93D</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
