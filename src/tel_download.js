@@ -180,35 +180,37 @@
             throw "Get non audio response with MIME type " + mime;
           }
 
-          const match = res.headers
+          try {
+            const match = res.headers
             .get("Content-Range")
             .match(contentRangeRegex);
 
-          const startOffset = parseInt(match[1]);
-          const endOffset = parseInt(match[2]);
-          const totalSize = parseInt(match[3]);
+            const startOffset = parseInt(match[1]);
+            const endOffset = parseInt(match[2]);
+            const totalSize = parseInt(match[3]);
 
-          if (startOffset !== _next_offset) {
-            logger.error("Gap detected between responses.");
-            logger.info("Last offset: " + _next_offset);
-            logger.info("New start offset " + match[1]);
-            throw "Gap detected between responses.";
+            if (startOffset !== _next_offset) {
+              logger.error("Gap detected between responses.");
+              logger.info("Last offset: " + _next_offset);
+              logger.info("New start offset " + match[1]);
+              throw "Gap detected between responses.";
+            }
+            if (_total_size && totalSize !== _total_size) {
+              logger.error("Total size differs");
+              throw "Total size differs";
+            }
+
+            _next_offset = endOffset + 1;
+            _total_size = totalSize;
           }
-          if (_total_size && totalSize !== _total_size) {
-            logger.error("Total size differs");
-            throw "Total size differs";
-          }
-
-          _next_offset = endOffset + 1;
-          _total_size = totalSize;
-
-          logger.info(
-            `Get response: ${res.headers.get(
-              "Content-Length"
-            )} bytes data from ${res.headers.get("Content-Range")}`
+          finally {
+            logger.info(
+              `Get response: ${res.headers.get(
+                "Content-Length"
+              )} bytes data from ${res.headers.get("Content-Range")}`
           );
-
           return res.blob();
+        }
         })
         .then((resBlob) => {
           _blobs.push(resBlob);
