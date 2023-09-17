@@ -391,6 +391,9 @@
     const voiceMessages = document.body.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
       const bubble = voiceMessage.closest(".bubble");
+      if (!bubble || bubble.querySelector("._tel_download_button_voice_container")) {
+        return; /* Skip if there's already a download button */
+      }
       const link = voiceMessage.audio.getAttribute("src");
       if (dataMid && downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid && voiceMessage.getAttribute("data-mid") === dataMid) {
         downloadButtonPinnedAudio.onclick = (e) => {
@@ -399,17 +402,11 @@
         }
         downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
       }
-      if (!bubble || bubble.querySelector("._tel_download_button_voice_container")) {
-        return; /* Skip if there's already a download button */
-      }
       const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
       if (link) {
         pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
       }
     });
-    if (pinnedAudio && !downloadButtonPinnedAudio.parentNode) {
-      pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
-    }
 
 
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
