@@ -394,7 +394,6 @@
       if (!bubble || bubble.querySelector("._tel_download_button_voice_container")) {
         return; /* Skip if there's already a download button */
       }
-      const link = voiceMessage.audio.getAttribute("src");
       if (dataMid && downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid && voiceMessage.getAttribute("data-mid") === dataMid) {
         downloadButtonPinnedAudio.onclick = (e) => {
           e.stopPropagation();
