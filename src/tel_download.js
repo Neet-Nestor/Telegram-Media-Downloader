@@ -347,10 +347,7 @@
     /* Voice Message */
     const voiceMessages = document.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
-      if (voiceMessage.querySelector(".audio-waveform") === null) {
-        return; /* Skip non-voice message */
-      }
-      if (voiceMessage.querySelector("_tel_download_button_voice_container")) {
+      if (voiceMessage.closest(".bubble").querySelector("._tel_download_button_voice_container")) {
         return; /* Skip if there's already a download button */
       }
       const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
@@ -364,10 +361,14 @@
         container.style.justifyContent = "center";
         container.style.alignItems = "end";
         const downloadButton = document.createElement("button");
+        downloadButton.style.zIndex = 2;
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
-        downloadButton.style.marginBottom = "16px";
-        downloadButton.style.backgroundColor = "black";
+        downloadButton.innerHTML =
+          '<span class="tgico button-icon">\uE93D</span>';
+        downloadButton.setAttribute("type", "button");
+        downloadButton.setAttribute("title", "Download");
+        downloadButton.setAttribute("aria-label", "Download");
         downloadButton.onclick = (e) => {
           e.stopPropagation();
           tel_download_audio(voiceMessage.audio.getAttribute("src"));
