@@ -391,7 +391,7 @@
     const voiceMessages = document.body.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
       const bubble = voiceMessage.closest(".bubble");
-      if (!bubble || bubble.querySelector("._tel_download_button_voice_container")) {
+      if (!bubble || bubble.querySelector("._tel_download_button_pinned_container")) {
         return; /* Skip if there's already a download button */
       }
       if (dataMid && downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid && voiceMessage.getAttribute("data-mid") === dataMid) {
@@ -400,10 +400,10 @@
           tel_download_audio(link);
         }
         downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
-      }
-      const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
-      if (link) {
-        pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
+        const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
+        if (link) {
+          pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
+        }
       }
     });
 
