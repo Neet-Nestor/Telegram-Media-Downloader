@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.043
+// @version      1.05
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -59,7 +59,8 @@
         headers: {
           Range: `bytes=${_next_offset}-`,
         },
-        "User-Agent": "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
+        "User-Agent":
+          "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
       })
         .then((res) => {
           if (![200, 206].includes(res.status)) {
@@ -130,7 +131,7 @@
       logger.info("Finish downloading blobs", fileName);
       logger.info("Concatenating blobs and downloading...", fileName);
 
-      const blob = new Blob(_blobs, {type: "video/mp4"});
+      const blob = new Blob(_blobs, { type: "video/mp4" });
       const blobUrl = window.URL.createObjectURL(blob);
 
       logger.info("Final blob size: " + blob.size + " bytes", fileName);
@@ -151,7 +152,7 @@
 
   const tel_download_audio = (url) => {
     let _blobs = [];
-    let _next_offset = 0
+    let _next_offset = 0;
     let _total_size = null;
     const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
 
@@ -182,8 +183,8 @@
 
           try {
             const match = res.headers
-            .get("Content-Range")
-            .match(contentRangeRegex);
+              .get("Content-Range")
+              .match(contentRangeRegex);
 
             const startOffset = parseInt(match[1]);
             const endOffset = parseInt(match[2]);
@@ -202,15 +203,14 @@
 
             _next_offset = endOffset + 1;
             _total_size = totalSize;
-          }
-          finally {
+          } finally {
             logger.info(
               `Get response: ${res.headers.get(
                 "Content-Length"
               )} bytes data from ${res.headers.get("Content-Range")}`
-          );
-          return res.blob();
-        }
+            );
+            return res.blob();
+          }
         })
         .then((resBlob) => {
           _blobs.push(resBlob);
@@ -233,7 +233,7 @@
         fileName
       );
 
-      let blob = new Blob(_blobs, {type: "audio/ogg"});
+      let blob = new Blob(_blobs, { type: "audio/ogg" });
       const blobUrl = window.URL.createObjectURL(blob);
 
       logger.info("Final blob size in bytes: " + blob.size, fileName);
@@ -381,32 +381,44 @@
     /* Voice Message */
     const pinnedAudio = document.body.querySelector(".pinned-audio");
     let dataMid;
-    let downloadButtonPinnedAudio = document.body.querySelector("._tel_download_button_pinned_container") || document.createElement("button");
+    let downloadButtonPinnedAudio =
+      document.body.querySelector("._tel_download_button_pinned_container") ||
+      document.createElement("button");
     if (pinnedAudio) {
       dataMid = pinnedAudio.getAttribute("data-mid");
-      downloadButtonPinnedAudio.className = "btn-icon tgico-download _tel_download_button_pinned_container";
+      downloadButtonPinnedAudio.className =
+        "btn-icon tgico-download _tel_download_button_pinned_container";
       downloadButtonPinnedAudio.innerHTML =
-          '<span class="tgico button-icon">\uE93D</span>';
+        '<span class="tgico button-icon">\uE93E</span>';
     }
     const voiceMessages = document.body.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
       const bubble = voiceMessage.closest(".bubble");
-      if (!bubble || bubble.querySelector("._tel_download_button_pinned_container")) {
+      if (
+        !bubble ||
+        bubble.querySelector("._tel_download_button_pinned_container")
+      ) {
         return; /* Skip if there's already a download button */
       }
-      if (dataMid && downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid && voiceMessage.getAttribute("data-mid") === dataMid) {
+      if (
+        dataMid &&
+        downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid &&
+        voiceMessage.getAttribute("data-mid") === dataMid
+      ) {
         downloadButtonPinnedAudio.onclick = (e) => {
           e.stopPropagation();
           tel_download_audio(link);
-        }
+        };
         downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
-        const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
+        const link =
+          voiceMessage.audio && voiceMessage.audio.getAttribute("src");
         if (link) {
-          pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
+          pinnedAudio
+            .querySelector(".pinned-container-wrapper-utils")
+            .appendChild(downloadButtonPinnedAudio);
         }
       }
     });
-
 
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(".media-viewer-whole");
@@ -456,7 +468,7 @@
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
         downloadButton.innerHTML =
-          '<span class="tgico button-icon">\uE93D</span>';
+          '<span class="tgico button-icon">\uE93E</span>';
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -476,7 +488,7 @@
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
       downloadButton.innerHTML =
-          '<span class="tgico button-icon">\uE93D</span>';
+        '<span class="tgico button-icon">\uE93E</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -497,7 +509,7 @@
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
       downloadButton.innerHTML =
-        '<span class="tgico button-icon">\uE93D</span>';
+        '<span class="tgico button-icon">\uE93E</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
