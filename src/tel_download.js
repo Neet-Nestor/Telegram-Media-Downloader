@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram下载器
-// @version      1.02
+// @version      1.05
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
-// @description  Used to download images, GIFs and videos on Telegram webapp even from channels restricting downloading and saving content
-// @description:zh-cn 从禁止下载的Telegram频道中下载图片和视频
+// @description  Used to download images, GIFs, videos and voice messages on Telegram webapp even from channels restricting downloading and saving content
+// @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
 // @author       Nestor Qin
 // @license      GNU GPLv3
 // @website      https://github.com/Neet-Nestor/Telegram-Media-Downloader
@@ -12,16 +12,19 @@
 // @match        https://webk.telegram.org/*
 // @match        https://webz.telegram.org/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
-// @grant        none
 // ==/UserScript==
 
 (function () {
   const logger = {
-    info: (message) => {
-      console.log("[Tel Download] " + message);
+    info: (message, fileName = null) => {
+      console.log(
+        `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`
+      );
     },
-    error: (message) => {
-      console.error("[Tel Download] " + message);
+    error: (message, fileName = null) => {
+      console.error(
+        `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`
+      );
     },
   };
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
@@ -33,26 +36,43 @@
     let _total_size = null;
     let _file_extension = "mp4";
 
+    let fileName =
+      (Math.random() + 1).toString(36).substring(2, 10) + "." + _file_extension;
+
+    // Some video src is in format:
+    // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
+    try {
+      const metadata = JSON.parse(
+        decodeURIComponent(url.split("/")[url.split("/").length - 1])
+      );
+      if (metadata.fileName) {
+        fileName = metadata.fileName;
+      }
+    } catch (e) {
+      // Invalid JSON string, pass extracting fileName
+    }
+    logger.info(`URL: ${url}`, fileName);
+
     const fetchNextPart = () => {
       fetch(url, {
         method: "GET",
         headers: {
           Range: `bytes=${_next_offset}-`,
         },
+        "User-Agent":
+          "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
       })
         .then((res) => {
-          logger.info("get response ", res);
           if (![200, 206].includes(res.status)) {
-            logger.error("Non 200/206 response was received: " + res.status);
-            return;
+            throw new Error("Non 200/206 response was received: " + res.status);
           }
-
           const mime = res.headers.get("Content-Type").split(";")[0];
           if (!mime.startsWith("video/")) {
-            logger.error("Get non video response with MIME type " + mime);
-            throw "Get non video response with MIME type " + mime;
+            throw new Error("Get non video response with MIME type " + mime);
           }
           _file_extension = mime.split("/")[1];
+          fileName =
+            fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
 
           const match = res.headers
             .get("Content-Range")
@@ -63,13 +83,13 @@
           const totalSize = parseInt(match[3]);
 
           if (startOffset !== _next_offset) {
-            logger.error("Gap detected between responses.");
-            logger.info("Last offset: " + _next_offset);
-            logger.info("New start offset " + match[1]);
+            logger.error("Gap detected between responses.", fileName);
+            logger.info("Last offset: " + _next_offset, fileName);
+            logger.info("New start offset " + match[1], fileName);
             throw "Gap detected between responses.";
           }
           if (_total_size && totalSize !== _total_size) {
-            logger.error("Total size differs");
+            logger.error("Total size differs", fileName);
             throw "Total size differs";
           }
 
@@ -79,12 +99,118 @@
           logger.info(
             `Get response: ${res.headers.get(
               "Content-Length"
-            )} bytes data from ${res.headers.get("Content-Range")}`
+            )} bytes data from ${res.headers.get("Content-Range")}`,
+            fileName
           );
           logger.info(
-            `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`
+            `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`,
+            fileName
           );
           return res.blob();
+        })
+        .then((resBlob) => {
+          _blobs.push(resBlob);
+        })
+        .then(() => {
+          if (!_total_size) {
+            throw new Error("_total_size is NULL");
+          }
+
+          if (_next_offset < _total_size) {
+            fetchNextPart();
+          } else {
+            save();
+          }
+        })
+        .catch((reason) => {
+          logger.error(reason, fileName);
+        });
+    };
+
+    const save = () => {
+      logger.info("Finish downloading blobs", fileName);
+      logger.info("Concatenating blobs and downloading...", fileName);
+
+      const blob = new Blob(_blobs, { type: "video/mp4" });
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      logger.info("Final blob size: " + blob.size + " bytes", fileName);
+
+      const a = document.createElement("a");
+      document.body.appendChild(a);
+      a.href = blobUrl;
+      a.download = fileName;
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+
+      logger.info("Download triggered", fileName);
+    };
+
+    fetchNextPart();
+  };
+
+  const tel_download_audio = (url) => {
+    let _blobs = [];
+    let _next_offset = 0;
+    let _total_size = null;
+    const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
+
+    const fetchNextPart = () => {
+      fetch(url, {
+        method: "GET",
+        headers: {
+          Range: `bytes=${_next_offset}-`,
+        },
+      })
+        .then((res) => {
+          if (res.status !== 206 && res.status !== 200) {
+            logger.error(
+              "Non 200/206 response was received: " + res.status,
+              fileName
+            );
+            return;
+          }
+
+          const mime = res.headers.get("Content-Type").split(";")[0];
+          if (!mime.startsWith("audio/")) {
+            logger.error(
+              "Get non audio response with MIME type " + mime,
+              fileName
+            );
+            throw "Get non audio response with MIME type " + mime;
+          }
+
+          try {
+            const match = res.headers
+              .get("Content-Range")
+              .match(contentRangeRegex);
+
+            const startOffset = parseInt(match[1]);
+            const endOffset = parseInt(match[2]);
+            const totalSize = parseInt(match[3]);
+
+            if (startOffset !== _next_offset) {
+              logger.error("Gap detected between responses.");
+              logger.info("Last offset: " + _next_offset);
+              logger.info("New start offset " + match[1]);
+              throw "Gap detected between responses.";
+            }
+            if (_total_size && totalSize !== _total_size) {
+              logger.error("Total size differs");
+              throw "Total size differs";
+            }
+
+            _next_offset = endOffset + 1;
+            _total_size = totalSize;
+          } finally {
+            logger.info(
+              `Get response: ${res.headers.get(
+                "Content-Length"
+              )} bytes data from ${res.headers.get("Content-Range")}`
+            );
+            return res.blob();
+          }
         })
         .then((resBlob) => {
           _blobs.push(resBlob);
@@ -97,37 +223,22 @@
           }
         })
         .catch((reason) => {
-          logger.error(reason);
+          logger.error(reason, fileName);
         });
     };
 
     const save = () => {
-      logger.info("Finish downloading blobs");
-      logger.info("Concatenating blobs and downloading...");
+      logger.info(
+        "Finish downloading blobs. Concatenating blobs and downloading...",
+        fileName
+      );
 
-      let fileName =
-        (Math.random() + 1).toString(36).substring(2, 10) +
-        "." +
-        _file_extension;
-
-      // Some video src is in format:
-      // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
-      try {
-        const metadata = JSON.parse(
-          decodeURIComponent(url.split("/")[url.split("/").length - 1])
-        );
-        logger.info(metadata);
-        if (metadata.fileName) {
-          fileName = metadata.fileName;
-        }
-      } catch (e) {
-        // Invalid JSON string, pass extracting filename
-      }
-
-      const blob = new Blob(_blobs, { type: "video/mp4" });
+      let blob = new Blob(_blobs, { type: "audio/ogg" });
       const blobUrl = window.URL.createObjectURL(blob);
 
-      logger.info("Final blob size: " + blob.size + " bytes");
+      logger.info("Final blob size in bytes: " + blob.size, fileName);
+
+      blob = 0;
 
       const a = document.createElement("a");
       document.body.appendChild(a);
@@ -137,7 +248,7 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
-      logger.info("Download triggered");
+      logger.info("Download triggered", fileName);
     };
 
     fetchNextPart();
@@ -154,7 +265,7 @@
     a.click();
     document.body.removeChild(a);
 
-    logger.info("Download triggered");
+    logger.info("Download triggered", fileName);
   };
 
   logger.info("Initialized");
@@ -162,27 +273,31 @@
   // For webz /a/ webapp
   setInterval(() => {
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
-    const mediaContainer = document.querySelector("#MediaViewer .MediaViewerSlide--active");
+    const mediaContainer = document.querySelector(
+      "#MediaViewer .MediaViewerSlide--active"
+    );
     if (!mediaContainer) return;
     const mediaViewerActions = document.querySelector(
       "#MediaViewer .MediaViewerActions"
     );
     if (!mediaViewerActions) return;
 
-    const videoPlayer = mediaContainer.querySelector(".MediaViewerContent > .VideoPlayer");
-    const img = mediaContainer.querySelector('.MediaViewerContent > div > img');
+    const videoPlayer = mediaContainer.querySelector(
+      ".MediaViewerContent > .VideoPlayer"
+    );
+    const img = mediaContainer.querySelector(".MediaViewerContent > div > img");
     // 1. Video player detected - Video or GIF
     // container > .MediaViewerSlides > .MediaViewerSlide > .MediaViewerContent > .VideoPlayer > video[src]
+    const downloadIcon = document.createElement("i");
+    downloadIcon.className = "icon icon-download";
+    const downloadButton = document.createElement("button");
+    downloadButton.className =
+      "Button smaller translucent-white round tel-download";
+    downloadButton.setAttribute("type", "button");
+    downloadButton.setAttribute("title", "Download");
+    downloadButton.setAttribute("aria-label", "Download");
     if (videoPlayer) {
       const videoUrl = videoPlayer.querySelector("video").currentSrc;
-      const downloadIcon = document.createElement("i");
-      downloadIcon.className = "icon icon-download";
-      const downloadButton = document.createElement("button");
-      downloadButton.className =
-        "Button smaller translucent-white round tel-download";
-      downloadButton.setAttribute("type", "button");
-      downloadButton.setAttribute("title", "Download");
-      downloadButton.setAttribute("aria-label", "Download");
       downloadButton.setAttribute("data-tel-download-url", videoUrl);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
@@ -226,14 +341,6 @@
         mediaViewerActions.prepend(downloadButton);
       }
     } else if (img && img.src) {
-      const downloadIcon = document.createElement("i");
-      downloadIcon.className = "icon icon-download";
-      const downloadButton = document.createElement("button");
-      downloadButton.className =
-        "Button smaller translucent-white round tel-download";
-      downloadButton.setAttribute("type", "button");
-      downloadButton.setAttribute("title", "Download");
-      downloadButton.setAttribute("aria-label", "Download");
       downloadButton.setAttribute("data-tel-download-url", img.src);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
@@ -271,6 +378,48 @@
 
   // For webk /k/ webapp
   setInterval(() => {
+    /* Voice Message */
+    const pinnedAudio = document.body.querySelector(".pinned-audio");
+    let dataMid;
+    let downloadButtonPinnedAudio =
+      document.body.querySelector("._tel_download_button_pinned_container") ||
+      document.createElement("button");
+    if (pinnedAudio) {
+      dataMid = pinnedAudio.getAttribute("data-mid");
+      downloadButtonPinnedAudio.className =
+        "btn-icon tgico-download _tel_download_button_pinned_container";
+      downloadButtonPinnedAudio.innerHTML =
+        '<span class="tgico button-icon">\uE93E</span>';
+    }
+    const voiceMessages = document.body.querySelectorAll("audio-element");
+    voiceMessages.forEach((voiceMessage) => {
+      const bubble = voiceMessage.closest(".bubble");
+      if (
+        !bubble ||
+        bubble.querySelector("._tel_download_button_pinned_container")
+      ) {
+        return; /* Skip if there's already a download button */
+      }
+      if (
+        dataMid &&
+        downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid &&
+        voiceMessage.getAttribute("data-mid") === dataMid
+      ) {
+        downloadButtonPinnedAudio.onclick = (e) => {
+          e.stopPropagation();
+          tel_download_audio(link);
+        };
+        downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
+        const link =
+          voiceMessage.audio && voiceMessage.audio.getAttribute("src");
+        if (link) {
+          pinnedAudio
+            .querySelector(".pinned-container-wrapper-utils")
+            .appendChild(downloadButtonPinnedAudio);
+        }
+      }
+    });
+
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(".media-viewer-whole");
     if (!mediaContainer) return;
@@ -318,6 +467,8 @@
         const downloadButton = document.createElement("button");
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
+        downloadButton.innerHTML =
+          '<span class="tgico button-icon">\uE93E</span>';
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -346,6 +497,8 @@
       const videoUrl = mediaAspecter.querySelector("video").src;
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
+      downloadButton.innerHTML =
+        '<span class="tgico button-icon">\uE93E</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -366,9 +519,17 @@
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
       // 3. Image without download button detected
       // container > img.thumbnail
+      if (!mediaAspecter.querySelector("img.thumbnail")) {
+        return;
+      }
       const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
+      if (!imageUrl) {
+        return;
+      }
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
+      downloadButton.innerHTML =
+        '<span class="tgico button-icon">\uE93E</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
