@@ -130,7 +130,7 @@
       logger.info("Finish downloading blobs", fileName);
       logger.info("Concatenating blobs and downloading...", fileName);
 
-      const blob = new Blob(_blobs, { type: "video/mp4" });
+      const blob = new Blob(_blobs, {type: "video/mp4"});
       const blobUrl = window.URL.createObjectURL(blob);
 
       logger.info("Final blob size: " + blob.size + " bytes", fileName);
@@ -149,14 +149,19 @@
     fetchNextPart();
   };
 
-  const tel_download_audio = (url, _chatName, _sender) => {
+  const tel_download_audio = (url) => {
     let _blobs = [];
-    let _file_extension = ".ogg";
-    const fileName =
-      (Math.random() + 1).toString(36).substring(2, 10) + _file_extension; // assume jpeg
+    let _next_offset = 0
+    let _total_size = null;
+    const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
 
     const fetchNextPart = () => {
-      fetch(url, { method: "GET" })
+      fetch(url, {
+        method: "GET",
+        headers: {
+          Range: `bytes=${_next_offset}-`,
+        },
+      })
         .then((res) => {
           if (res.status !== 206 && res.status !== 200) {
             logger.error(
@@ -174,13 +179,48 @@
             );
             throw "Get non audio response with MIME type " + mime;
           }
+
+          try {
+            const match = res.headers
+            .get("Content-Range")
+            .match(contentRangeRegex);
+
+            const startOffset = parseInt(match[1]);
+            const endOffset = parseInt(match[2]);
+            const totalSize = parseInt(match[3]);
+
+            if (startOffset !== _next_offset) {
+              logger.error("Gap detected between responses.");
+              logger.info("Last offset: " + _next_offset);
+              logger.info("New start offset " + match[1]);
+              throw "Gap detected between responses.";
+            }
+            if (_total_size && totalSize !== _total_size) {
+              logger.error("Total size differs");
+              throw "Total size differs";
+            }
+
+            _next_offset = endOffset + 1;
+            _total_size = totalSize;
+          }
+          finally {
+            logger.info(
+              `Get response: ${res.headers.get(
+                "Content-Length"
+              )} bytes data from ${res.headers.get("Content-Range")}`
+          );
           return res.blob();
+        }
         })
         .then((resBlob) => {
           _blobs.push(resBlob);
         })
         .then(() => {
-          save();
+          if (_next_offset < _total_size) {
+            fetchNextPart();
+          } else {
+            save();
+          }
         })
         .catch((reason) => {
           logger.error(reason, fileName);
@@ -192,10 +232,12 @@
         "Finish downloading blobs. Concatenating blobs and downloading...",
         fileName
       );
-      let blob = new Blob(_blobs, { type: "audio/ogg" });
+
+      let blob = new Blob(_blobs, {type: "audio/ogg"});
       const blobUrl = window.URL.createObjectURL(blob);
 
       logger.info("Final blob size in bytes: " + blob.size, fileName);
+
       blob = 0;
 
       const a = document.createElement("a");
@@ -246,16 +288,16 @@
     const img = mediaContainer.querySelector(".MediaViewerContent > div > img");
     // 1. Video player detected - Video or GIF
     // container > .MediaViewerSlides > .MediaViewerSlide > .MediaViewerContent > .VideoPlayer > video[src]
+    const downloadIcon = document.createElement("i");
+    downloadIcon.className = "icon icon-download";
+    const downloadButton = document.createElement("button");
+    downloadButton.className =
+      "Button smaller translucent-white round tel-download";
+    downloadButton.setAttribute("type", "button");
+    downloadButton.setAttribute("title", "Download");
+    downloadButton.setAttribute("aria-label", "Download");
     if (videoPlayer) {
       const videoUrl = videoPlayer.querySelector("video").currentSrc;
-      const downloadIcon = document.createElement("i");
-      downloadIcon.className = "icon icon-download";
-      const downloadButton = document.createElement("button");
-      downloadButton.className =
-        "Button smaller translucent-white round tel-download";
-      downloadButton.setAttribute("type", "button");
-      downloadButton.setAttribute("title", "Download");
-      downloadButton.setAttribute("aria-label", "Download");
       downloadButton.setAttribute("data-tel-download-url", videoUrl);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
@@ -299,14 +341,6 @@
         mediaViewerActions.prepend(downloadButton);
       }
     } else if (img && img.src) {
-      const downloadIcon = document.createElement("i");
-      downloadIcon.className = "icon icon-download";
-      const downloadButton = document.createElement("button");
-      downloadButton.className =
-        "Button smaller translucent-white round tel-download";
-      downloadButton.setAttribute("type", "button");
-      downloadButton.setAttribute("title", "Download");
-      downloadButton.setAttribute("aria-label", "Download");
       downloadButton.setAttribute("data-tel-download-url", img.src);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
@@ -345,37 +379,34 @@
   // For webk /k/ webapp
   setInterval(() => {
     /* Voice Message */
-    const voiceMessages = document.querySelectorAll("audio-element");
+    const pinnedAudio = document.body.querySelector(".pinned-audio");
+    let dataMid;
+    let downloadButtonPinnedAudio = document.body.querySelector("._tel_download_button_pinned_container") || document.createElement("button");
+    if (pinnedAudio) {
+      dataMid = pinnedAudio.getAttribute("data-mid");
+      downloadButtonPinnedAudio.className = "btn-icon tgico-download _tel_download_button_pinned_container";
+      downloadButtonPinnedAudio.innerHTML =
+          '<span class="tgico button-icon">\uE93D</span>';
+    }
+    const voiceMessages = document.body.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
-      if (voiceMessage.querySelector(".audio-waveform") === null) {
-        return; /* Skip non-voice message */
-      }
-      if (voiceMessage.querySelector("_tel_download_button_voice_container")) {
+      const bubble = voiceMessage.closest(".bubble");
+      if (!bubble || bubble.querySelector("._tel_download_button_pinned_container")) {
         return; /* Skip if there's already a download button */
       }
-      const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
-      if (link) {
-        const container = document.createElement("div");
-        container.className = "_tel_download_button_voice_container";
-        container.style.position = "absolute";
-        container.style.width = "100%";
-        container.style.height = "100%";
-        container.style.display = "flex";
-        container.style.justifyContent = "center";
-        container.style.alignItems = "end";
-        const downloadButton = document.createElement("button");
-        downloadButton.className =
-          "btn-icon default__button tgico-download tel-download";
-        downloadButton.style.marginBottom = "16px";
-        downloadButton.style.backgroundColor = "black";
-        downloadButton.onclick = (e) => {
+      if (dataMid && downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid && voiceMessage.getAttribute("data-mid") === dataMid) {
+        downloadButtonPinnedAudio.onclick = (e) => {
           e.stopPropagation();
-          tel_download_audio(voiceMessage.audio.getAttribute("src"));
-        };
-        voiceMessage.closest(".bubble").appendChild(container);
-        container.appendChild(downloadButton);
+          tel_download_audio(link);
+        }
+        downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
+        const link = voiceMessage.audio && voiceMessage.audio.getAttribute("src");
+        if (link) {
+          pinnedAudio.querySelector(".pinned-container-wrapper-utils").appendChild(downloadButtonPinnedAudio);
+        }
       }
     });
+
 
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(".media-viewer-whole");
@@ -445,7 +476,7 @@
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
       downloadButton.innerHTML =
-        '<span class="tgico button-icon">\uE93D</span>';
+          '<span class="tgico button-icon">\uE93D</span>';
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
