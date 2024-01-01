@@ -124,7 +124,9 @@
             fetchNextPart(_writable);
           } else {
             if (_writable !== null) {
-              _writable.close().then(() => {});
+              _writable.close().then(() => {
+                logger.info("Download finished", fileName);
+              });
             } else {
               save();
             }
@@ -257,7 +259,9 @@
             fetchNextPart(_writable);
           } else {
             if (_writable !== null) {
-              _writable.close().then(() => {});
+              _writable.close().then(() => {
+                logger.info("Download finished", fileName);
+              });
             } else {
               save();
             }
