@@ -371,7 +371,7 @@
       downloadButton.setAttribute("data-tel-download-url", videoUrl);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
-        tel_download_video(videoUrl);
+        tel_download_video(videoPlayer.querySelector("video").currentSrc);
       };
 
       // Add download button to video controls
@@ -400,7 +400,7 @@
         ) {
           // Update existing button
           telDownloadButton.onclick = () => {
-            tel_download_video(videoUrl);
+            tel_download_video(videoPlayer.querySelector("video").currentSrc);
           };
           telDownloadButton.setAttribute("data-tel-download-url", videoUrl);
         }
@@ -543,7 +543,7 @@
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
         downloadButton.onclick = () => {
-          tel_download_video(videoUrl);
+          tel_download_video(mediaAspecter.querySelector("video").src);
         };
         brControls.prepend(downloadButton);
       }
@@ -563,17 +563,13 @@
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
       downloadButton.onclick = () => {
-        tel_download_video(videoUrl);
+        tel_download_video(mediaAspecter.querySelector("video").src);
       };
       mediaButtons.prepend(downloadButton);
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
       // 3. Image without download button detected
       // container > img.thumbnail
-      if (!mediaAspecter.querySelector("img.thumbnail")) {
-        return;
-      }
-      const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
-      if (!imageUrl) {
+      if (!mediaAspecter.querySelector("img.thumbnail") || !mediaAspecter.querySelector("img.thumbnail").src) {
         return;
       }
       const downloadButton = document.createElement("button");
@@ -584,7 +580,7 @@
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
       downloadButton.onclick = () => {
-        tel_download_image(imageUrl);
+        tel_download_image(mediaAspecter.querySelector("img.thumbnail").src);
       };
       mediaButtons.prepend(downloadButton);
     }
