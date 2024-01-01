@@ -53,7 +53,7 @@
     }
     logger.info(`URL: ${url}`, fileName);
 
-    const fetchNextPart = () => {
+    const fetchNextPart = (_writable) => {
       fetch(url, {
         method: "GET",
         headers: {
@@ -109,7 +109,11 @@
           return res.blob();
         })
         .then((resBlob) => {
-          _blobs.push(resBlob);
+          if (_writable !== null) {
+            _writable.write(resBlob).then(() => {});
+          } else {
+            _blobs.push(resBlob);
+          }
         })
         .then(() => {
           if (!_total_size) {
@@ -117,9 +121,13 @@
           }
 
           if (_next_offset < _total_size) {
-            fetchNextPart();
+            fetchNextPart(_writable);
           } else {
-            save();
+            if (_writable !== null) {
+              _writable.close().then(() => {});
+            } else {
+              save();
+            }
           }
         })
         .catch((reason) => {
@@ -147,7 +155,32 @@
       logger.info("Download triggered", fileName);
     };
 
-    fetchNextPart();
+    const supportsFileSystemAccess =
+      'showSaveFilePicker' in unsafeWindow &&
+      (() => {
+        try {
+          return unsafeWindow.self === unsafeWindow.top;
+        } catch {
+          return false;
+        }
+      })();
+    if (supportsFileSystemAccess) {
+      unsafeWindow.showSaveFilePicker({
+        suggestedName: fileName,
+      }).then((handle) => {
+        handle.createWritable().then((writable) => {
+          fetchNextPart(writable);
+        }).catch((err) => {
+          console.error(err.name, err.message);
+        });
+      }).catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error(err.name, err.message);
+        }
+      });
+    } else {
+      fetchNextPart(null);
+    }
   };
 
   const tel_download_audio = (url) => {
@@ -156,7 +189,7 @@
     let _total_size = null;
     const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
 
-    const fetchNextPart = () => {
+    const fetchNextPart = (_writable) => {
       fetch(url, {
         method: "GET",
         headers: {
@@ -213,13 +246,21 @@
           }
         })
         .then((resBlob) => {
-          _blobs.push(resBlob);
+          if (_writable !== null) {
+            _writable.write(resBlob).then(() => {});
+          } else {
+            _blobs.push(resBlob);
+          }
         })
         .then(() => {
           if (_next_offset < _total_size) {
-            fetchNextPart();
+            fetchNextPart(_writable);
           } else {
-            save();
+            if (_writable !== null) {
+              _writable.close().then(() => {});
+            } else {
+              save();
+            }
           }
         })
         .catch((reason) => {
@@ -251,7 +292,32 @@
       logger.info("Download triggered", fileName);
     };
 
-    fetchNextPart();
+    const supportsFileSystemAccess =
+      'showSaveFilePicker' in unsafeWindow &&
+      (() => {
+        try {
+          return unsafeWindow.self === unsafeWindow.top;
+        } catch {
+          return false;
+        }
+      })();
+    if (supportsFileSystemAccess) {
+      unsafeWindow.showSaveFilePicker({
+        suggestedName: fileName,
+      }).then((handle) => {
+        handle.createWritable().then((writable) => {
+          fetchNextPart(writable);
+        }).catch((err) => {
+          console.error(err.name, err.message);
+        });
+      }).catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error(err.name, err.message);
+        }
+      });
+    } else {
+      fetchNextPart(null);
+    }
   };
 
   const tel_download_image = (imageUrl) => {
