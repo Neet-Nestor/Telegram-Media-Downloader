@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
-// @name:zh-CN   Telegram下载器
-// @version      1.053
+// @name:zh-CN   Telegram图片视频下载器
+// @version      1.061
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
-// @description  Allow you to download images, GIFs, videos, and voice messages on Telegram webapp from private channels which disable downloading and restrict saving content
+// @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
 // @author       Nestor Qin
 // @license      GNU GPLv3
@@ -61,7 +61,7 @@
     }
     logger.info(`URL: ${url}`, fileName);
 
-    const fetchNextPart = () => {
+    const fetchNextPart = (_writable) => {
       fetch(url, {
         method: "GET",
         headers: {
@@ -117,7 +117,11 @@
           return res.blob();
         })
         .then((resBlob) => {
-          _blobs.push(resBlob);
+          if (_writable !== null) {
+            _writable.write(resBlob).then(() => {});
+          } else {
+            _blobs.push(resBlob);
+          }
         })
         .then(() => {
           if (!_total_size) {
@@ -125,9 +129,15 @@
           }
 
           if (_next_offset < _total_size) {
-            fetchNextPart();
+            fetchNextPart(_writable);
           } else {
-            save();
+            if (_writable !== null) {
+              _writable.close().then(() => {
+                logger.info("Download finished", fileName);
+              });
+            } else {
+              save();
+            }
           }
         })
         .catch((reason) => {
@@ -155,7 +165,32 @@
       logger.info("Download triggered", fileName);
     };
 
-    fetchNextPart();
+    const supportsFileSystemAccess =
+      'showSaveFilePicker' in unsafeWindow &&
+      (() => {
+        try {
+          return unsafeWindow.self === unsafeWindow.top;
+        } catch {
+          return false;
+        }
+      })();
+    if (supportsFileSystemAccess) {
+      unsafeWindow.showSaveFilePicker({
+        suggestedName: fileName,
+      }).then((handle) => {
+        handle.createWritable().then((writable) => {
+          fetchNextPart(writable);
+        }).catch((err) => {
+          console.error(err.name, err.message);
+        });
+      }).catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error(err.name, err.message);
+        }
+      });
+    } else {
+      fetchNextPart(null);
+    }
   };
 
   const tel_download_audio = (url) => {
@@ -164,7 +199,7 @@
     let _total_size = null;
     const fileName = hashCode(url).toString(36) + ".ogg";
 
-    const fetchNextPart = () => {
+    const fetchNextPart = (_writable) => {
       fetch(url, {
         method: "GET",
         headers: {
@@ -221,13 +256,23 @@
           }
         })
         .then((resBlob) => {
-          _blobs.push(resBlob);
+          if (_writable !== null) {
+            _writable.write(resBlob).then(() => {});
+          } else {
+            _blobs.push(resBlob);
+          }
         })
         .then(() => {
           if (_next_offset < _total_size) {
-            fetchNextPart();
+            fetchNextPart(_writable);
           } else {
-            save();
+            if (_writable !== null) {
+              _writable.close().then(() => {
+                logger.info("Download finished", fileName);
+              });
+            } else {
+              save();
+            }
           }
         })
         .catch((reason) => {
@@ -259,7 +304,32 @@
       logger.info("Download triggered", fileName);
     };
 
-    fetchNextPart();
+    const supportsFileSystemAccess =
+      'showSaveFilePicker' in unsafeWindow &&
+      (() => {
+        try {
+          return unsafeWindow.self === unsafeWindow.top;
+        } catch {
+          return false;
+        }
+      })();
+    if (supportsFileSystemAccess) {
+      unsafeWindow.showSaveFilePicker({
+        suggestedName: fileName,
+      }).then((handle) => {
+        handle.createWritable().then((writable) => {
+          fetchNextPart(writable);
+        }).catch((err) => {
+          console.error(err.name, err.message);
+        });
+      }).catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error(err.name, err.message);
+        }
+      });
+    } else {
+      fetchNextPart(null);
+    }
   };
 
   const tel_download_image = (imageUrl) => {
@@ -309,7 +379,7 @@
       downloadButton.setAttribute("data-tel-download-url", videoUrl);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
-        tel_download_video(videoUrl);
+        tel_download_video(videoPlayer.querySelector("video").currentSrc);
       };
 
       // Add download button to video controls
@@ -338,7 +408,7 @@
         ) {
           // Update existing button
           telDownloadButton.onclick = () => {
-            tel_download_video(videoUrl);
+            tel_download_video(videoPlayer.querySelector("video").currentSrc);
           };
           telDownloadButton.setAttribute("data-tel-download-url", videoUrl);
         }
@@ -481,7 +551,7 @@
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
         downloadButton.onclick = () => {
-          tel_download_video(videoUrl);
+          tel_download_video(mediaAspecter.querySelector("video").src);
         };
         brControls.prepend(downloadButton);
       }
@@ -501,17 +571,13 @@
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
       downloadButton.onclick = () => {
-        tel_download_video(videoUrl);
+        tel_download_video(mediaAspecter.querySelector("video").src);
       };
       mediaButtons.prepend(downloadButton);
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
       // 3. Image without download button detected
       // container > img.thumbnail
-      if (!mediaAspecter.querySelector("img.thumbnail")) {
-        return;
-      }
-      const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
-      if (!imageUrl) {
+      if (!mediaAspecter.querySelector("img.thumbnail") || !mediaAspecter.querySelector("img.thumbnail").src) {
         return;
       }
       const downloadButton = document.createElement("button");
@@ -522,7 +588,7 @@
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
       downloadButton.onclick = () => {
-        tel_download_image(imageUrl);
+        tel_download_image(mediaAspecter.querySelector("img.thumbnail").src);
       };
       mediaButtons.prepend(downloadButton);
     }
