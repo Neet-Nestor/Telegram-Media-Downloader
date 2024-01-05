@@ -1,6 +1,10 @@
 # Telegram Media Downloader
 A Tampermonkey script that allows users to download images, GIFs, and videos on the Telegram webapp from private channels which disable downloading and restrict saving content.
 
+![GitHub License](https://img.shields.io/github/license/Neet-Nestor/Telegram-Media-Downloader)
+![Greasy Fork Version](https://img.shields.io/greasyfork/v/446342-telegram-media-downloader)
+![Greasy Fork Downloads](https://img.shields.io/greasyfork/dt/446342-telegram-media-downloader)
+
 ## Installation
 ### Greasy Fork
 1. Install [Tampermonkey](https://www.tampermonkey.net/)
