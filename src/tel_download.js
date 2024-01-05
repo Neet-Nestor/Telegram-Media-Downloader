@@ -39,12 +39,93 @@
     return h >>> 0;
   };
 
+  const createProgressBar = (videoId, fileName) => {
+    const container = document.getElementById("tel-downloader-progress-bar-container");
+    const innerContainer = document.createElement("div");
+    innerContainer.id = "tel-downloader-progress-" + videoId;
+    innerContainer.style.width = "20rem";
+    innerContainer.style.backgroundColor = "#0003";
+    innerContainer.style.marginTop = "1rem";
+
+    const flexContainer = document.createElement("div");
+    flexContainer.style.display = "flex";
+    flexContainer.style.justifyContent = "space-between";
+
+    const title = document.createElement("p");
+    title.className = "filename";
+    title.style.margin = 0;
+    title.innerText = fileName;
+
+    const closeButton = document.createElement("div");
+    closeButton.style.color = '#8a8a8a';
+    closeButton.style.cursor = 'pointer';
+    closeButton.style.fontSize = '1.2rem';
+    closeButton.innerHTML = '&times;';
+    closeButton.onclick = function() {
+      container.removeChild(innerContainer);
+    };
+
+    const progressBar = document.createElement("div");
+    progressBar.className = 'progress';
+    progressBar.style.backgroundColor = '#e2e2e2';
+    progressBar.style.position = "relative";
+    progressBar.style.width = "100%";
+    progressBar.style.height = "1.6rem";
+    progressBar.style.borderRadius = "2rem";
+    progressBar.style.overflow = "hidden";
+    
+    const counter = document.createElement("p");
+    counter.style.position = "absolute";
+    counter.style.zIndex = 5;
+    counter.style.left = "50%";
+    counter.style.top = "50%";
+    counter.style.transform = "translate(-50%, -50%)";
+    counter.style.margin = 0;
+    counter.style.color = "black";
+    const progress = document.createElement("div");
+    progress.style.position = "absolute";
+    progress.style.height = "100%";
+    progress.style.width = "0%";
+    progress.style.backgroundColor = "#6093B5";
+
+    progressBar.appendChild(counter);
+    progressBar.appendChild(progress);
+    flexContainer.appendChild(title);
+    flexContainer.appendChild(closeButton);
+    innerContainer.appendChild(flexContainer);
+    innerContainer.appendChild(progressBar);
+    container.appendChild(innerContainer);
+  }
+
+  const updateProgress = (videoId, fileName, progress) => {
+    const innerContainer = document.getElementById("tel-downloader-progress-" + videoId);
+    innerContainer.querySelector("p.filename").innerText = fileName;
+    const progressBar = innerContainer.querySelector("div.progress");
+    progressBar.querySelector("p").innerText = progress + "%";
+    progressBar.querySelector("div").style.width = progress + "%";
+  }
+
+  const completeProgress = (videoId) => {
+    const progressBar = document.getElementById("tel-downloader-progress-" + videoId).querySelector("div.progress");
+    progressBar.querySelector("p").innerText = "Completed";
+    progressBar.querySelector("div").style.backgroundColor = "#B6C649";
+    progressBar.querySelector("div").style.width = "100%";
+  }
+
+  const AbortProgress = (videoId) => {
+    const progressBar = document.getElementById("tel-downloader-progress-" + videoId).querySelector("div.progress");
+    progressBar.querySelector("p").innerText = "Aborted";
+    progressBar.querySelector("div").style.backgroundColor = "#D16666";
+    progressBar.querySelector("div").style.width = "100%";
+  }
+
   const tel_download_video = (url) => {
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
     let _file_extension = "mp4";
 
+    const videoId = (Math.random() + 1).toString(36).substring(2, 10) + "_" + Date.now().toString();
     let fileName = hashCode(url).toString(36) + "." + _file_extension;
 
     // Some video src is in format:
@@ -114,6 +195,7 @@
             `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`,
             fileName
           );
+          updateProgress(videoId, fileName, ((_next_offset * 100) / _total_size).toFixed(0));
           return res.blob();
         })
         .then((resBlob) => {
@@ -138,10 +220,12 @@
             } else {
               save();
             }
+            completeProgress(videoId);
           }
         })
         .catch((reason) => {
           logger.error(reason, fileName);
+          AbortProgress(videoId);
         });
     };
 
@@ -180,6 +264,7 @@
       }).then((handle) => {
         handle.createWritable().then((writable) => {
           fetchNextPart(writable);
+          createProgressBar(videoId);
         }).catch((err) => {
           console.error(err.name, err.message);
         });
@@ -190,6 +275,7 @@
       });
     } else {
       fetchNextPart(null);
+      createProgressBar(videoId);
     }
   };
 
@@ -593,4 +679,21 @@
       mediaButtons.prepend(downloadButton);
     }
   }, REFRESH_DELAY);
+
+  // Progress bar container setup
+  (function() {
+    const body = document.querySelector("body");
+    const container = document.createElement("div");
+    container.id = "tel-downloader-progress-bar-container";
+    container.style.position = "fixed";
+    container.style.bottom = 0;
+    container.style.right = 0;
+    if (location.pathname.startsWith('/k/')) {
+      container.style.zIndex = 4;
+    } else{
+      container.style.zIndex = 1500;
+    }
+    container.style.padding = '20px';
+    body.appendChild(container);
+  })();
 })();
