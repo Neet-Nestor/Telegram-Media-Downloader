@@ -639,7 +639,17 @@
         downloadButton.onclick = () => {
           tel_download_video(mediaAspecter.querySelector("video").src);
         };
+        if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+          mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+        }
+        const openInNewTab = document.createElement("button");
+        openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+        openInNewTab.style.backgroundColor = "red";
+        openInNewTab.onclick = (e) => {
+          window.open(videoUrl);
+        };
         brControls.prepend(downloadButton);
+        brControls.prepend(openInNewTab);
       }
     } else if (
       mediaAspecter.querySelector("video") &&
@@ -659,7 +669,17 @@
       downloadButton.onclick = () => {
         tel_download_video(mediaAspecter.querySelector("video").src);
       };
+      if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+        mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+      }
+      const openInNewTab = document.createElement("button");
+      openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+      openInNewTab.style.backgroundColor = "red";
+      openInNewTab.onclick = (e) => {
+        window.open(videoUrl);
+      };
       mediaButtons.prepend(downloadButton);
+      mediaButtons.prepend(openInNewTab);
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
       // 3. Image without download button detected
       // container > img.thumbnail
@@ -676,7 +696,29 @@
       downloadButton.onclick = () => {
         tel_download_image(mediaAspecter.querySelector("img.thumbnail").src);
       };
+      if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+        mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+      }
+      const openInNewTab = document.createElement("button");
+      openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+      openInNewTab.style.backgroundColor = "red";
+      openInNewTab.onclick = (e) => {
+        window.open(imageUrl);
+      };
       mediaButtons.prepend(downloadButton);
+      mediaButtons.prepend(openInNewTab);
+    } else if(document.getElementsByClassName("media-viewer-buttons")[0].getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0] === undefined){
+      const imageUrl = mediaAspecter.querySelector("img.thumbnail").src;
+      if (mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab").length > 0) {
+        mediaContainer.getElementsByClassName("btn-icon default__button tgico-download tel-openinnewtab")[0].remove();
+      }
+      const openInNewTab = document.createElement("button");
+      openInNewTab.className = "btn-icon default__button tgico-download tel-openinnewtab";
+      openInNewTab.style.backgroundColor = "red";
+      openInNewTab.onclick = (e) => {
+        window.open(imageUrl);
+      };
+      mediaButtons.prepend(openInNewTab);
     }
   }, REFRESH_DELAY);
 
