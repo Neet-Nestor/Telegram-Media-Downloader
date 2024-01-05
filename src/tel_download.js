@@ -29,6 +29,15 @@
   };
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
+  const hashCode = (s) => {
+    var h = 0, l = s.length, i = 0;
+    if ( l > 0 ) {
+      while (i < l) {
+        h = (h << 5) - h + s.charCodeAt(i++) | 0;
+      }
+    }
+    return h >>> 0;
+  };
 
   const tel_download_video = (url) => {
     let _blobs = [];
@@ -36,8 +45,7 @@
     let _total_size = null;
     let _file_extension = "mp4";
 
-    let fileName =
-      (Math.random() + 1).toString(36).substring(2, 10) + "." + _file_extension;
+    let fileName = hashCode(url).toString(36) + "." + _file_extension;
 
     // Some video src is in format:
     // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
@@ -189,7 +197,7 @@
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
-    const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".ogg";
+    const fileName = hashCode(url).toString(36) + ".ogg";
 
     const fetchNextPart = (_writable) => {
       fetch(url, {
