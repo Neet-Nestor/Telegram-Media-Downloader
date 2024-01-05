@@ -18,11 +18,11 @@ For channels and chats that allow saving content, this script will have no effec
 
 For channels and chats that disable downloading and restrict saving content, this script will add the download button back for images, GIFs and videos.
 
-![Image Download Button](https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2VjNmU2ZDM0YTFlOWY4YTMzZDZmNjVlMDE2ODQ4OGY4N2E3MDFkNSZlcD12MV9pbnRlcm5hbF9naWZzX2dpZklkJmN0PWc/lqCVcw0pCd2VA3zqoE/giphy.gif)
-![GIF Download Button](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMzYwMzM3ZTMzYmI1MzA4M2EyYmY0NTFlOTg4OWFhNjhjNDk5YTkzYiZlcD12MV9pbnRlcm5hbF9naWZzX2dpZklkJmN0PWc/wnYzW4vwpPdeuo62nQ/giphy.gif)
-![Video Download Button](https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExOWU5ODFiNWI3ODBiOTI5YjA5MDlmNDBkYTA3NzI1MzZjYjRiODg4YyZlcD12MV9pbnRlcm5hbF9naWZzX2dpZklkJmN0PWc/gCgck1KttIFww8yPDI/giphy.gif)
+![Image Download](https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2VjNmU2ZDM0YTFlOWY4YTMzZDZmNjVlMDE2ODQ4OGY4N2E3MDFkNSZlcD12MV9pbnRlcm5hbF9naWZzX2dpZklkJmN0PWc/lqCVcw0pCd2VA3zqoE/giphy.gif)
+![GIF Download](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMzYwMzM3ZTMzYmI1MzA4M2EyYmY0NTFlOTg4OWFhNjhjNDk5YTkzYiZlcD12MV9pbnRlcm5hbF9naWZzX2dpZklkJmN0PWc/wnYzW4vwpPdeuo62nQ/giphy.gif)
+![Video Download](https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMXcxYnJxaXMxcW05YW5rZ2YzZzE0bTU4aTBwYXI1N3pmdnVzbDFrdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EEPbblwmSpteAmwLls/giphy.gif)
 
-The script will silently download files in background, and only after it finishes downloading the entire file the browser will then save the file locally. Therefore, if you are downloading a large video, it's normal that you see nothing happening for a quite a while before the browser starts downloading. To check the downloading progress, refer to [the following instructions](#check-downloading-progress).
+For videos, a progress bar will show on the bottom-right corder after you started downloading. For images and audios, there won't be a progress bar.
 
 ### Supported Webapp Versions
 There are 2 different versions of telegram webapps:
@@ -32,9 +32,7 @@ There are 2 different versions of telegram webapps:
 This script should work on both versions of webapp. If you are using another different version of webapp and find this script does not work, please raise an issue to our [GitHub repo](https://github.com/Neet-Nestor/Telegram-Media-Downloader/issues). 
 
 ### Check Downloading Progress
-If you would like to check the current downloading progress, you can [open browser DevTools -> console](https://developer.chrome.com/docs/devtools/open/) and check the text output.
-
-<img src="assets/console_output.png" width="600">
+A progress bar will show on the bottom-right of the screen for videos. You can also check [DevTools console](https://developer.chrome.com/docs/devtools/open/) for logs.
 
 ## Support Author
 If you like this script, you can support me via [Venmo](https://venmo.com/u/NeetNestor) or [buy me a coffee](https://ko-fi.com/neetnestor) :)
