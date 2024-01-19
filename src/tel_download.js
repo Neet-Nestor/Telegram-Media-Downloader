@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram图片视频下载器
-// @version      1.101
+// @version      1.102
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -43,13 +43,15 @@
   };
 
   const createProgressBar = (videoId, fileName) => {
+    const isDarkMode = document.querySelector('html').classList.contains('night') || document.querySelector('html').classList.contains('theme-dark');
     const container = document.getElementById("tel-downloader-progress-bar-container");
     const innerContainer = document.createElement("div");
     innerContainer.id = "tel-downloader-progress-" + videoId;
     innerContainer.style.width = "20rem";
-    innerContainer.style.backgroundColor = "#0003";
-    innerContainer.style.marginTop = "1rem";
-
+    innerContainer.style.marginTop = "0.4rem";
+    innerContainer.style.padding = "0.6rem";
+    innerContainer.style.backgroundColor = isDarkMode ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.6)";
+    
     const flexContainer = document.createElement("div");
     flexContainer.style.display = "flex";
     flexContainer.style.justifyContent = "space-between";
@@ -57,12 +59,13 @@
     const title = document.createElement("p");
     title.className = "filename";
     title.style.margin = 0;
+    title.style.color = 'white';
     title.innerText = fileName;
 
     const closeButton = document.createElement("div");
-    closeButton.style.color = '#8a8a8a';
     closeButton.style.cursor = 'pointer';
     closeButton.style.fontSize = '1.2rem';
+    closeButton.style.color = isDarkMode ? '#8a8a8a' : 'white';
     closeButton.innerHTML = '&times;';
     closeButton.onclick = function() {
       container.removeChild(innerContainer);
@@ -701,10 +704,8 @@
     if (location.pathname.startsWith('/k/')) {
       container.style.zIndex = 4;
     } else{
-      container.style.zIndex = 1500;
+      container.style.zIndex = 1600;
     }
-    container.style.padding = '1.6rem';
-    container.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
     body.appendChild(container);
   })();
 })();
