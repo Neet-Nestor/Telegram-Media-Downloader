@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
 // @name:zh-CN   Telegram图片视频下载器
-// @version      1.102
+// @version      1.103
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
@@ -559,7 +559,7 @@
       downloadButtonPinnedAudio.className =
         "btn-icon tgico-download _tel_download_button_pinned_container";
       downloadButtonPinnedAudio.innerHTML =
-        '<span class="tgico button-icon">\uE93E</span>';
+        `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
     }
     const voiceMessages = document.body.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
