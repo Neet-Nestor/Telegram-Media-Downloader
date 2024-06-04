@@ -7,12 +7,16 @@ A Tampermonkey script that allows users to download images, GIFs, and videos on 
 
 ## Installation
 ### Greasy Fork
-1. Install [Tampermonkey](https://www.tampermonkey.net/)
-2. Install this script by visiting Greasy Fork:
+1. Install [Tampermonkey](https://www.tampermonkey.net/) or other user script browser extensions.
+
+    (Note, If you are using Tampermonkey extension in a Chrome-based browser, following [instructions](https://www.tampermonkey.net/faq.php#Q209) to enable Developer Mode.)
+3. Install this script by visiting Greasy Fork:
     https://greasyfork.org/en/scripts/446342-telegram-media-downloader
 
 ### Manual Installation
-1. Install [Tampermonkey](https://www.tampermonkey.net/)
+1. Install [Tampermonkey](https://www.tampermonkey.net/) or other user script browser extensions.
+
+    (Note, If you are using Tampermonkey extension in a Chrome-based browser, following [instructions](https://www.tampermonkey.net/faq.php#Q209) to enable Developer Mode.)
 2. Open Tampermonkey Dashboard, drag & drop src/tel_download.js into it and clicks the "install" button
 
 ## How to Use
