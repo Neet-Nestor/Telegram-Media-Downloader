@@ -28,30 +28,38 @@
     },
   };
   // Unicode values for icons (used in /k/ app)
-  const DOWNLOAD_ICON = '\uE947';
-  const FORWARD_ICON = '\uE95A';
+  const DOWNLOAD_ICON = "\uE947";
+  const FORWARD_ICON = "\uE95A";
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
   const hashCode = (s) => {
-    var h = 0, l = s.length, i = 0;
-    if ( l > 0 ) {
+    var h = 0,
+      l = s.length,
+      i = 0;
+    if (l > 0) {
       while (i < l) {
-        h = (h << 5) - h + s.charCodeAt(i++) | 0;
+        h = ((h << 5) - h + s.charCodeAt(i++)) | 0;
       }
     }
     return h >>> 0;
   };
 
   const createProgressBar = (videoId, fileName) => {
-    const isDarkMode = document.querySelector('html').classList.contains('night') || document.querySelector('html').classList.contains('theme-dark');
-    const container = document.getElementById("tel-downloader-progress-bar-container");
+    const isDarkMode =
+      document.querySelector("html").classList.contains("night") ||
+      document.querySelector("html").classList.contains("theme-dark");
+    const container = document.getElementById(
+      "tel-downloader-progress-bar-container"
+    );
     const innerContainer = document.createElement("div");
     innerContainer.id = "tel-downloader-progress-" + videoId;
     innerContainer.style.width = "20rem";
     innerContainer.style.marginTop = "0.4rem";
     innerContainer.style.padding = "0.6rem";
-    innerContainer.style.backgroundColor = isDarkMode ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.6)";
-    
+    innerContainer.style.backgroundColor = isDarkMode
+      ? "rgba(0,0,0,0.3)"
+      : "rgba(0,0,0,0.6)";
+
     const flexContainer = document.createElement("div");
     flexContainer.style.display = "flex";
     flexContainer.style.justifyContent = "space-between";
@@ -59,27 +67,27 @@
     const title = document.createElement("p");
     title.className = "filename";
     title.style.margin = 0;
-    title.style.color = 'white';
+    title.style.color = "white";
     title.innerText = fileName;
 
     const closeButton = document.createElement("div");
-    closeButton.style.cursor = 'pointer';
-    closeButton.style.fontSize = '1.2rem';
-    closeButton.style.color = isDarkMode ? '#8a8a8a' : 'white';
-    closeButton.innerHTML = '&times;';
-    closeButton.onclick = function() {
+    closeButton.style.cursor = "pointer";
+    closeButton.style.fontSize = "1.2rem";
+    closeButton.style.color = isDarkMode ? "#8a8a8a" : "white";
+    closeButton.innerHTML = "&times;";
+    closeButton.onclick = function () {
       container.removeChild(innerContainer);
     };
 
     const progressBar = document.createElement("div");
-    progressBar.className = 'progress';
-    progressBar.style.backgroundColor = '#e2e2e2';
+    progressBar.className = "progress";
+    progressBar.style.backgroundColor = "#e2e2e2";
     progressBar.style.position = "relative";
     progressBar.style.width = "100%";
     progressBar.style.height = "1.6rem";
     progressBar.style.borderRadius = "2rem";
     progressBar.style.overflow = "hidden";
-    
+
     const counter = document.createElement("p");
     counter.style.position = "absolute";
     counter.style.zIndex = 5;
@@ -101,29 +109,35 @@
     innerContainer.appendChild(flexContainer);
     innerContainer.appendChild(progressBar);
     container.appendChild(innerContainer);
-  }
+  };
 
   const updateProgress = (videoId, fileName, progress) => {
-    const innerContainer = document.getElementById("tel-downloader-progress-" + videoId);
+    const innerContainer = document.getElementById(
+      "tel-downloader-progress-" + videoId
+    );
     innerContainer.querySelector("p.filename").innerText = fileName;
     const progressBar = innerContainer.querySelector("div.progress");
     progressBar.querySelector("p").innerText = progress + "%";
     progressBar.querySelector("div").style.width = progress + "%";
-  }
+  };
 
   const completeProgress = (videoId) => {
-    const progressBar = document.getElementById("tel-downloader-progress-" + videoId).querySelector("div.progress");
+    const progressBar = document
+      .getElementById("tel-downloader-progress-" + videoId)
+      .querySelector("div.progress");
     progressBar.querySelector("p").innerText = "Completed";
     progressBar.querySelector("div").style.backgroundColor = "#B6C649";
     progressBar.querySelector("div").style.width = "100%";
-  }
+  };
 
   const AbortProgress = (videoId) => {
-    const progressBar = document.getElementById("tel-downloader-progress-" + videoId).querySelector("div.progress");
+    const progressBar = document
+      .getElementById("tel-downloader-progress-" + videoId)
+      .querySelector("div.progress");
     progressBar.querySelector("p").innerText = "Aborted";
     progressBar.querySelector("div").style.backgroundColor = "#D16666";
     progressBar.querySelector("div").style.width = "100%";
-  }
+  };
 
   const tel_download_video = (url) => {
     let _blobs = [];
@@ -131,7 +145,10 @@
     let _total_size = null;
     let _file_extension = "mp4";
 
-    const videoId = (Math.random() + 1).toString(36).substring(2, 10) + "_" + Date.now().toString();
+    const videoId =
+      (Math.random() + 1).toString(36).substring(2, 10) +
+      "_" +
+      Date.now().toString();
     let fileName = hashCode(url).toString(36) + "." + _file_extension;
 
     // Some video src is in format:
@@ -201,7 +218,11 @@
             `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`,
             fileName
           );
-          updateProgress(videoId, fileName, ((_next_offset * 100) / _total_size).toFixed(0));
+          updateProgress(
+            videoId,
+            fileName,
+            ((_next_offset * 100) / _total_size).toFixed(0)
+          );
           return res.blob();
         })
         .then((resBlob) => {
@@ -256,7 +277,7 @@
     };
 
     const supportsFileSystemAccess =
-      'showSaveFilePicker' in unsafeWindow &&
+      "showSaveFilePicker" in unsafeWindow &&
       (() => {
         try {
           return unsafeWindow.self === unsafeWindow.top;
@@ -265,20 +286,26 @@
         }
       })();
     if (supportsFileSystemAccess) {
-      unsafeWindow.showSaveFilePicker({
-        suggestedName: fileName,
-      }).then((handle) => {
-        handle.createWritable().then((writable) => {
-          fetchNextPart(writable);
-          createProgressBar(videoId);
-        }).catch((err) => {
-          console.error(err.name, err.message);
+      unsafeWindow
+        .showSaveFilePicker({
+          suggestedName: fileName,
+        })
+        .then((handle) => {
+          handle
+            .createWritable()
+            .then((writable) => {
+              fetchNextPart(writable);
+              createProgressBar(videoId);
+            })
+            .catch((err) => {
+              console.error(err.name, err.message);
+            });
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            console.error(err.name, err.message);
+          }
         });
-      }).catch((err) => {
-        if (err.name !== 'AbortError') {
-          console.error(err.name, err.message);
-        }
-      });
     } else {
       fetchNextPart(null);
       createProgressBar(videoId);
@@ -397,7 +424,7 @@
     };
 
     const supportsFileSystemAccess =
-      'showSaveFilePicker' in unsafeWindow &&
+      "showSaveFilePicker" in unsafeWindow &&
       (() => {
         try {
           return unsafeWindow.self === unsafeWindow.top;
@@ -406,19 +433,25 @@
         }
       })();
     if (supportsFileSystemAccess) {
-      unsafeWindow.showSaveFilePicker({
-        suggestedName: fileName,
-      }).then((handle) => {
-        handle.createWritable().then((writable) => {
-          fetchNextPart(writable);
-        }).catch((err) => {
-          console.error(err.name, err.message);
+      unsafeWindow
+        .showSaveFilePicker({
+          suggestedName: fileName,
+        })
+        .then((handle) => {
+          handle
+            .createWritable()
+            .then((writable) => {
+              fetchNextPart(writable);
+            })
+            .catch((err) => {
+              console.error(err.name, err.message);
+            });
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            console.error(err.name, err.message);
+          }
         });
-      }).catch((err) => {
-        if (err.name !== 'AbortError') {
-          console.error(err.name, err.message);
-        }
-      });
     } else {
       fetchNextPart(null);
     }
@@ -558,8 +591,7 @@
       dataMid = pinnedAudio.getAttribute("data-mid");
       downloadButtonPinnedAudio.className =
         "btn-icon tgico-download _tel_download_button_pinned_container";
-      downloadButtonPinnedAudio.innerHTML =
-        `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
+      downloadButtonPinnedAudio.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
     }
     const voiceMessages = document.body.querySelectorAll("audio-element");
     voiceMessages.forEach((voiceMessage) => {
@@ -590,6 +622,48 @@
       }
     });
 
+    // Stories
+    const storiesContainer = document.getElementById("stories-viewer");
+    if (storiesContainer) {
+      const createDownloadButton = () => {
+        const downloadButton = document.createElement("button");
+        downloadButton.className = "btn-icon rp tel-download";
+        downloadButton.innerHTML = `<span class="tgico">${DOWNLOAD_ICON}</span><div class="c-ripple"></div>`;
+        downloadButton.setAttribute("type", "button");
+        downloadButton.setAttribute("title", "Download");
+        downloadButton.setAttribute("aria-label", "Download");
+        downloadButton.onclick = () => {
+          // 1. Story with video
+          const videoSrc =
+            storiesContainer.querySelector("video.media-video")?.src ||
+            storiesContainer.querySelector("video.media-video")?.currentSrc ||
+            storiesContainer
+              .querySelector("video.media-video")
+              ?.querySelector("source")?.src;
+          if (videoSrc) tel_download_video(videoSrc);
+          // 2. Story with image
+          const imageSrc =
+            storiesContainer.querySelector("img.media-photo")?.src;
+          if (imageSrc) tel_download_image(imageSrc);
+        };
+        return downloadButton;
+      };
+
+      const storyHeader = storiesContainer.querySelector(
+        "[class^='_ViewerStoryHeaderRight']"
+      );
+      if (storyHeader && !storyHeader.querySelector(".tel-download")) {
+        storyHeader.prepend(createDownloadButton());
+      }
+
+      const storyFooter = storiesContainer.querySelector(
+        "[class^='_ViewerStoryFooterRight']"
+      );
+      if (storyFooter && !storyFooter.querySelector(".tel-download")) {
+        storyFooter.prepend(createDownloadButton());
+      }
+    }
+
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(".media-viewer-whole");
     if (!mediaContainer) return;
@@ -602,17 +676,19 @@
     if (!mediaAspecter || !mediaButtons) return;
 
     // Query hidden buttons and unhide them
-    const hiddenButtons = mediaButtons.querySelectorAll('button.btn-icon.hide');
+    const hiddenButtons = mediaButtons.querySelectorAll("button.btn-icon.hide");
     let onDownload = null;
     for (const btn of hiddenButtons) {
       btn.classList.remove("hide");
       if (btn.textContent === FORWARD_ICON) {
-        btn.classList.add('tgico-forward');
+        btn.classList.add("tgico-forward");
       }
       if (btn.textContent === DOWNLOAD_ICON) {
-        btn.classList.add('tgico-download');
+        btn.classList.add("tgico-download");
         // Use official download buttons
-        onDownload = () => { btn.click(); };
+        onDownload = () => {
+          btn.click();
+        };
         logger.info("onDownload", onDownload);
       }
     }
@@ -632,8 +708,7 @@
         const downloadButton = document.createElement("button");
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
-        downloadButton.innerHTML =
-          `<span class="tgico">${DOWNLOAD_ICON}</span>`;
+        downloadButton.innerHTML = `<span class="tgico">${DOWNLOAD_ICON}</span>`;
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -655,8 +730,7 @@
       // container > video[src]
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
-      downloadButton.innerHTML =
-        `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
+      downloadButton.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -671,13 +745,15 @@
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
       // 3. Image without download button detected
       // container > img.thumbnail
-      if (!mediaAspecter.querySelector("img.thumbnail") || !mediaAspecter.querySelector("img.thumbnail").src) {
+      if (
+        !mediaAspecter.querySelector("img.thumbnail") ||
+        !mediaAspecter.querySelector("img.thumbnail").src
+      ) {
         return;
       }
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
-      downloadButton.innerHTML =
-        `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
+      downloadButton.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -693,16 +769,16 @@
   }, REFRESH_DELAY);
 
   // Progress bar container setup
-  (function() {
+  (function () {
     const body = document.querySelector("body");
     const container = document.createElement("div");
     container.id = "tel-downloader-progress-bar-container";
     container.style.position = "fixed";
     container.style.bottom = 0;
     container.style.right = 0;
-    if (location.pathname.startsWith('/k/')) {
+    if (location.pathname.startsWith("/k/")) {
       container.style.zIndex = 4;
-    } else{
+    } else {
       container.style.zIndex = 1600;
     }
     body.appendChild(container);
