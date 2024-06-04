@@ -475,16 +475,64 @@
 
   // For webz /a/ webapp
   setInterval(() => {
+    // Stories
+    const storiesContainer = document.getElementById("StoryViewer");
+    if (storiesContainer) {
+      console.log("storiesContainer");
+      const createDownloadButton = () => {
+        console.log("createDownloadButton");
+        const downloadIcon = document.createElement("i");
+        downloadIcon.className = "icon icon-download";
+        const downloadButton = document.createElement("button");
+        downloadButton.className =
+          "Button TkphaPyQ tiny translucent-white round tel-download";
+        downloadButton.appendChild(downloadIcon);
+        downloadButton.setAttribute("type", "button");
+        downloadButton.setAttribute("title", "Download");
+        downloadButton.setAttribute("aria-label", "Download");
+        downloadButton.onclick = () => {
+          // 1. Story with video
+          const video = storiesContainer.querySelector("video");
+          const videoSrc =
+            video?.src ||
+            video?.currentSrc ||
+            video?.querySelector("source")?.src;
+          if (videoSrc) {
+            tel_download_video(videoSrc);
+          } else {
+            // 2. Story with image
+            const images = storiesContainer.querySelectorAll("img.PVZ8TOWS");
+            if (images.length > 0) {
+              const imageSrc = images[images.length - 1]?.src;
+              if (imageSrc) tel_download_image(imageSrc);
+            }
+          }
+        };
+        return downloadButton;
+      };
+
+      const storyHeader =
+        storiesContainer.querySelector(".GrsJNw3y") ||
+        storiesContainer.querySelector(".DropdownMenu").parentNode;
+      if (storyHeader && !storyHeader.querySelector(".tel-download")) {
+        console.log("storyHeader");
+        storyHeader.insertBefore(
+          createDownloadButton(),
+          storyHeader.querySelector("button")
+        );
+      }
+    }
+
     // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
     const mediaContainer = document.querySelector(
       "#MediaViewer .MediaViewerSlide--active"
     );
-    if (!mediaContainer) return;
     const mediaViewerActions = document.querySelector(
       "#MediaViewer .MediaViewerActions"
     );
-    if (!mediaViewerActions) return;
+    if (!mediaContainer || !mediaViewerActions) return;
 
+    // Videos in channels
     const videoPlayer = mediaContainer.querySelector(
       ".MediaViewerContent > .VideoPlayer"
     );
@@ -634,17 +682,19 @@
         downloadButton.setAttribute("aria-label", "Download");
         downloadButton.onclick = () => {
           // 1. Story with video
+          const video = storiesContainer.querySelector("video.media-video");
           const videoSrc =
-            storiesContainer.querySelector("video.media-video")?.src ||
-            storiesContainer.querySelector("video.media-video")?.currentSrc ||
-            storiesContainer
-              .querySelector("video.media-video")
-              ?.querySelector("source")?.src;
-          if (videoSrc) tel_download_video(videoSrc);
-          // 2. Story with image
-          const imageSrc =
-            storiesContainer.querySelector("img.media-photo")?.src;
-          if (imageSrc) tel_download_image(imageSrc);
+            video?.src ||
+            video?.currentSrc ||
+            video?.querySelector("source")?.src;
+          if (videoSrc) {
+            tel_download_video(videoSrc);
+          } else {
+            // 2. Story with image
+            const imageSrc =
+              storiesContainer.querySelector("img.media-photo")?.src;
+            if (imageSrc) tel_download_image(imageSrc);
+          }
         };
         return downloadButton;
       };
@@ -769,7 +819,7 @@
   }, REFRESH_DELAY);
 
   // Progress bar container setup
-  (function () {
+  (function setupProgressBar() {
     const body = document.querySelector("body");
     const container = document.createElement("div");
     container.id = "tel-downloader-progress-bar-container";
