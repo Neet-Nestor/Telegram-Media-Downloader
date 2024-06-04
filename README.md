@@ -1,9 +1,17 @@
+<div align="center">
+
 # Telegram Media Downloader
-A Tampermonkey script that allows users to download images, GIFs, and videos on the Telegram webapp from private channels which disable downloading and restrict saving content.
+
+**Unlock Telegram: Download Anything You Like.**
 
 ![GitHub License](https://img.shields.io/github/license/Neet-Nestor/Telegram-Media-Downloader)
 ![Greasy Fork Version](https://img.shields.io/greasyfork/v/446342-telegram-media-downloader)
 ![Greasy Fork Downloads](https://img.shields.io/greasyfork/dt/446342-telegram-media-downloader)
+
+</div>
+
+## Overview
+This script unlocks and enables download of images, GIFs, and videos in Telegram webapps from chats, stories, and even private channels where downloading is disabled or restricted.
 
 ## Installation
 ### Greasy Fork
