@@ -1,6 +1,6 @@
 <div align="center">
 
-# Telegram Media Downloader
+# Telegram Video Downloader / Telegram Media Downloader
 
 **Unlock Telegram: Download Anything You Like.**
 
@@ -17,9 +17,10 @@ This script unlocks and enables download of images, GIFs, audios, and videos in 
 
 ## Installation
 ### Greasy Fork
-1. Install [Tampermonkey](https://www.tampermonkey.net/) or other user script browser extensions.
+1. Install [Tampermonkey](https://www.tampermonkey.net/) or [Userscripts](https://apps.apple.com/us/app/userscripts/id1463298887), or other equivalent user script manager browser extensions.
 
     (Note, If you are using Tampermonkey extension in a Chrome-based browser, following [instructions](https://www.tampermonkey.net/faq.php#Q209) to enable Developer Mode.)
+
 3. Install this script by visiting Greasy Fork:
     https://greasyfork.org/en/scripts/446342-telegram-media-downloader
 
