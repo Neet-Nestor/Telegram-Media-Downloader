@@ -34,7 +34,7 @@ User scripts put you in control of your  browsing experience. Once installed, th
     (Note, If you are using Tampermonkey extension in a Chrome-based browser, following [instructions](https://www.tampermonkey.net/faq.php#Q209) to enable Developer Mode.)
 
 2. Install this script by visiting Greasy Fork:
-    https://greasyfork.org/en/scripts/446342-telegram-media-downloader
+    https://greasyfork.org/scripts/446342-telegram-media-downloader
 
 ### Manual Installation
 1. install a user script manager
