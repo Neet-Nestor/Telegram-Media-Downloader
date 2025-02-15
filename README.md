@@ -4,9 +4,9 @@
 
 **Unlock Telegram: Download Anything You Like.**
 
-![GitHub License](https://img.shields.io/github/license/Neet-Nestor/Telegram-Media-Downloader)
-![Greasy Fork Version](https://img.shields.io/greasyfork/v/446342-telegram-media-downloader)
-![Greasy Fork Downloads](https://img.shields.io/greasyfork/dt/446342-telegram-media-downloader)
+[![GitHub License](https://img.shields.io/github/license/Neet-Nestor/Telegram-Media-Downloader)](./LICENSE)
+[![Greasy Fork Version](https://img.shields.io/greasyfork/v/446342-telegram-media-downloader)](https://greasyfork.org/scripts/446342-telegram-media-downloader)
+[![Greasy Fork Downloads](https://img.shields.io/greasyfork/dt/446342-telegram-media-downloader)](https://greasyfork.org/scripts/446342-telegram-media-downloader)
 
 </div>
 
