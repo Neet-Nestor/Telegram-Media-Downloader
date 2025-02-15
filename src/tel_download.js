@@ -637,7 +637,7 @@
 
   // For webk /k/ webapp
   setInterval(() => {
-    /* Voice Message */
+    /* Voice Message or Circle Video */
     const pinnedAudio = document.body.querySelector(".pinned-audio");
     let dataMid;
     let downloadButtonPinnedAudio =
@@ -649,9 +649,9 @@
         "btn-icon tgico-download _tel_download_button_pinned_container";
       downloadButtonPinnedAudio.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
     }
-    const voiceMessages = document.body.querySelectorAll("audio-element");
-    voiceMessages.forEach((voiceMessage) => {
-      const bubble = voiceMessage.closest(".bubble");
+    const audioElements = document.body.querySelectorAll("audio-element");
+    audioElements.forEach((audioElement) => {
+      const bubble = audioElement.closest(".bubble");
       if (
         !bubble ||
         bubble.querySelector("._tel_download_button_pinned_container")
@@ -661,15 +661,19 @@
       if (
         dataMid &&
         downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid &&
-        voiceMessage.getAttribute("data-mid") === dataMid
+        audioElement.getAttribute("data-mid") === dataMid
       ) {
         downloadButtonPinnedAudio.onclick = (e) => {
           e.stopPropagation();
-          tel_download_audio(link);
+          if (isAudio) {
+              tel_download_audio(link);
+          } else {
+              tel_download_video(link);
+          }
         };
         downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
-        const link =
-          voiceMessage.audio && voiceMessage.audio.getAttribute("src");
+        const link = audioElement.audio && audioElement.audio.getAttribute("src");
+        const isAudio = audioElement.audio && audioElement.audio instanceof HTMLAudioElement
         if (link) {
           pinnedAudio
             .querySelector(".pinned-container-wrapper-utils")
