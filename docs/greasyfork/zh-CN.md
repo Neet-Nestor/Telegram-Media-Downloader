@@ -4,7 +4,9 @@
 
 本脚本允许你在Telegram网页版下载图片、GIF动图和视频。即使频道禁用了文件下载或限制了文件保存也仍然可以下载。
 
-重要：本插件**完全免费**！！！**完全免费**！！！！没有任何付费选项，如果出现付费要求说明您下载了错误的流氓插件，请不要付费并到[GitHub Issues页面](https://github.com/Neet-Nestor/Telegram-Media-Downloader/issues)或评论区留言开发者。
+📢 重要提醒：本插件**完全免费**！！！**完全免费**！！！！
+
+本插件未提供任何付费选项，如果出现任何付费要求，则说明您下载了错误的恶意插件，请不要付费并到[GitHub Issues页面](https://github.com/Neet-Nestor/Telegram-Media-Downloader/issues)或Greasyfork评论区留言开发者。
 
 ## 如何安装
 

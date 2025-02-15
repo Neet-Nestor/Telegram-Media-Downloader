@@ -1,12 +1,16 @@
 // ==UserScript==
 // @name         Telegram Media Downloader
+// @name:en      Telegram Media Downloader
+// @name:zh-CN   Telegram 受限图片视频下载器
+// @name:zh-TW   Telegram 受限圖片影片下載器
 // @name:ru      Telegram: загрузчик медиафайлов
-// @name:zh-CN   Telegram图片视频下载器
 // @version      1.204
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
+// @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:ru Загружайте изображения, GIF-файлы, видео и голосовые сообщения в веб-приложении Telegram из частных каналов, которые отключили загрузку и ограничили сохранение контента
-// @description:zh-cn 从禁止下载的Telegram频道中下载图片、视频及语音消息
+// @description:zh-CN 从禁止下载的Telegram频道中下载图片、视频及语音消息
+// @description:zh-TW 從禁止下載的 Telegram 頻道中下載圖片、影片及語音訊息
 // @author       Nestor Qin
 // @license      GNU GPLv3
 // @website      https://github.com/Neet-Nestor/Telegram-Media-Downloader
@@ -15,6 +19,7 @@
 // @match        https://webz.telegram.org/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
 // ==/UserScript==
+
 
 (function () {
   const logger = {
