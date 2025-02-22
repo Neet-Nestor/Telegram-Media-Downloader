@@ -52,6 +52,217 @@
     return h >>> 0;
   };
 
+  let observer;
+
+  const initObserver = () => {
+    if (!observer) {
+      console.log('init observer')
+      observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.name.includes("/progressive/document")) {
+            handleInterceptedRequest(entry);
+          }
+        }
+      });
+      observer.observe({ type: "resource", buffered: true });
+    }
+  }
+
+  const interceptRequests = (messageId, duration, fileName) => {
+    registerMessageForIntercept(messageId, duration, fileName)
+  }
+
+  const handleInterceptedRequest = (entry) => {
+    const url = entry.name;
+    for (const [messageId, audioElement] of audioDownloadsMap.entries()) {
+      if (!audioElement.urls.has(url)) {
+        tel_download_audio(url, messageId);
+        break;
+      }
+    }
+  };
+
+  const registerMessageForIntercept = (messageId, duration, fileName) => {
+    if (!audioDownloadsMap.has(messageId)) {
+      initAudioDownload(messageId, duration, fileName)
+    }
+    initObserver();
+  };
+
+  const unregisterMessage = (messageId) => {
+    document.querySelector(`#${messageId} .download-button`).remove()
+    audioDownloadsMap.delete(messageId);
+  };
+
+  const audioDownloadsMap = new Map();
+
+  const initAudioDownload = (messageId, duration, fileName) => {
+      const audioDownloadObject = {
+      urls: new Set(),
+      blobs: new Map(),
+      progressBar: null,
+      duration,
+      fileName
+    }
+    audioDownloadsMap.set(messageId, audioDownloadObject);
+  }
+
+  const downloadMenuItemElement = () => {
+    const menuItem = document.createElement("div");
+    menuItem.setAttribute("role", "menuitem");
+    menuItem.setAttribute("tabindex", "0");
+    menuItem.className = "MenuItem compact";
+    menuItem.innerHTML = `
+                <i class="icon icon-download" aria-hidden="true"></i>
+                Download
+            `;
+    return menuItem;
+  }
+
+  const downloadButtonElement = (stopDownload = false) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'Button download-button tiny primary round';
+    btn.setAttribute('aria-label', `${stopDownload ? 'Cancel d' : 'D'}ownload`);
+    btn.setAttribute('title', `${stopDownload ? 'Cancel d' : 'D'}ownload`);
+    btn.innerHTML = `<i class="icon ${stopDownload ? 'icon-close' : 'icon-arrow-down'}" aria-hidden="true"></i>`;
+    return btn
+  }
+
+  const downloadSpinnerElement = () => {
+    const spinner = document.createElement('div');
+    spinner.className = 'media-loading opacity-transition fast open shown'; // not-open closing
+    spinner.innerHTML = `
+      <div class="ProgressSpinner size-m transparent no-cross">
+        <canvas class="ProgressSpinner_canvas" width="48" height="48" style="height: 48px; transition: color 50ms linear !important;"></canvas>
+      </div>
+    `;
+    return spinner
+  }
+
+  const formatProgress = (downloaded, total) => {
+    const mbDownloaded = (downloaded / 1024 / 1024).toFixed(1);
+    const mbTotal = (total / 1024 / 1024).toFixed(1);
+    return `${mbDownloaded} MB / ${mbTotal} MB`;
+  };
+
+  const addAudioDownloadButton = () => {
+
+    const audioElements = document.querySelectorAll('.Audio');
+
+    audioElements.forEach((audioElement) => {
+
+      const messageElement = audioElement.closest('.Message.message-list-item');
+      if (!messageElement) return;
+
+      const messageId = messageElement.getAttribute('id');
+
+      const existingDownloadButton = audioElement.querySelector('.download-button');
+
+      if (!existingDownloadButton) {
+        const playButton = audioElement.querySelector('button.Button.toggle-play');
+        if (!playButton) {
+          return;
+        }
+        const button = downloadButtonElement();
+
+        button.onclick = () => {
+
+          const duration = audioElement.querySelector('.duration').textContent;
+          const fileName = audioElement.querySelector('.title').textContent;
+
+          imitateClick(playButton);
+
+          setTimeout(() => interceptRequests(messageId, duration, fileName), 2000);
+        };
+
+        audioElement.querySelector('.toogle-play-wrapper')
+          .after(button);
+
+      } else if (audioDownloadsMap.has(messageId)) { /* downloading */
+
+        let downloadBtn = audioElement.querySelector('.download-button');
+        if (!audioElement.querySelector('.icon-close')) {
+          downloadBtn.replaceWith(downloadButtonElement(true));
+        }
+
+        const spinner = downloadSpinnerElement()
+
+        if (!audioElement.querySelector('.media-loading')) {
+          downloadBtn.insertAdjacentElement('beforebegin', spinner);
+        }
+
+        // update progress bar
+        const metaDiv = audioElement.querySelector('.meta')
+        metaDiv.innerHTML = audioDownloadsMap.get(messageId).progressBar;
+
+        // прекратить загрузку
+        downloadBtn.onclick = () => {
+          const span = document.createElement('span');
+          span.className = 'duration'
+          span.dir = 'auto';
+          span.innerHTML = audioDownloadsMap.get(messageId).duration;
+
+          audioDownloadsMap.delete(messageId);
+
+          audioElement.querySelector('.media-loading').remove();
+
+          metaDiv.replaceChildren(span);
+
+          unregisterMessage(messageId);
+        }
+      }
+    });
+  }
+
+  const addContextMenuDownloadItem = () => {
+
+    const contextMenu = document.querySelector('.MessageContextMenu_items')
+
+    if (!contextMenu) {
+      return;
+    }
+
+    const playButton = contextMenu.closest('.Message').querySelector('button.Button.toggle-play')
+    if (!playButton) {
+      return; /* Skip if there's no audio */
+    }
+
+    const downloadButton = Array.from(contextMenu.querySelectorAll('.MenuItem.compact'))
+      .find(item => item.textContent.includes('Download'));
+
+    if (downloadButton) {
+      return; /* Skip if there's already a download button */
+    }
+
+    const menuItem = downloadMenuItemElement();
+    contextMenu.appendChild(menuItem);
+
+    const messageElement = contextMenu.closest('.Message.message-list-item');
+    if (!messageElement) return;
+
+    const messageId = messageElement.getAttribute('id');
+
+    menuItem.onclick = function () {
+
+      contextMenu.parentNode.removeChild(contextMenu);
+      const duration = messageElement.querySelector('.duration').textContent
+      const fileName = messageElement.querySelector('.title').textContent
+
+      imitateClick(playButton)
+      initAudioDownload(messageId, duration, fileName)
+
+      setTimeout(() => interceptRequests(messageId, duration, fileName), 2000);
+    };
+  }
+
+  const imitateClick = (buttonElement) => {
+    buttonElement.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, clientX: 100, clientY: 100}));
+    buttonElement.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, clientX: 100, clientY: 100}));
+    buttonElement.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, clientX: 100, clientY: 100}));
+    buttonElement.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: 100, clientY: 100}));
+  }
+
   const createProgressBar = (videoId, fileName) => {
     const isDarkMode =
       document.querySelector("html").classList.contains("night") ||
@@ -320,105 +531,83 @@
     }
   };
 
-  const tel_download_audio = (url) => {
-    let _blobs = [];
+  const tel_download_audio = (url, messageId) => {
+
+    if (audioDownloadsMap.has(messageId) && audioDownloadsMap.get(messageId).urls.has(url)) {
+      return;
+    }
+
+    const downloadData = audioDownloadsMap.get(messageId)
     let _next_offset = 0;
     let _total_size = null;
-    const fileName = hashCode(url).toString(36) + ".ogg";
+    const fileName = audioDownloadsMap.get(messageId).fileName
 
-    const fetchNextPart = (_writable) => {
-      fetch(url, {
-        method: "GET",
-        headers: {
-          Range: `bytes=${_next_offset}-`,
-        },
-      })
-        .then((res) => {
-          if (res.status !== 206 && res.status !== 200) {
-            logger.error(
-              "Non 200/206 response was received: " + res.status,
-              fileName
-            );
-            return;
-          }
+    downloadData.urls.add(url)
 
-          const mime = res.headers.get("Content-Type").split(";")[0];
-          if (!mime.startsWith("audio/")) {
-            logger.error(
-              "Get non audio response with MIME type " + mime,
-              fileName
-            );
-            throw "Get non audio response with MIME type " + mime;
-          }
+    if (!downloadData.blobs.get(messageId)) {
+      downloadData.blobs.set(url, [])
+    }
 
-          try {
-            const match = res.headers
-              .get("Content-Range")
-              .match(contentRangeRegex);
-
-            const startOffset = parseInt(match[1]);
-            const endOffset = parseInt(match[2]);
-            const totalSize = parseInt(match[3]);
-
-            if (startOffset !== _next_offset) {
-              logger.error("Gap detected between responses.");
-              logger.info("Last offset: " + _next_offset);
-              logger.info("New start offset " + match[1]);
-              throw "Gap detected between responses.";
-            }
-            if (_total_size && totalSize !== _total_size) {
-              logger.error("Total size differs");
-              throw "Total size differs";
-            }
-
-            _next_offset = endOffset + 1;
-            _total_size = totalSize;
-          } finally {
-            logger.info(
-              `Get response: ${res.headers.get(
-                "Content-Length"
-              )} bytes data from ${res.headers.get("Content-Range")}`
-            );
-            return res.blob();
-          }
-        })
-        .then((resBlob) => {
-          if (_writable !== null) {
-            _writable.write(resBlob).then(() => {});
-          } else {
-            _blobs.push(resBlob);
-          }
-        })
-        .then(() => {
-          if (_next_offset < _total_size) {
-            fetchNextPart(_writable);
-          } else {
-            if (_writable !== null) {
-              _writable.close().then(() => {
-                logger.info("Download finished", fileName);
-              });
-            } else {
-              save();
-            }
-          }
-        })
-        .catch((reason) => {
-          logger.error(reason, fileName);
+    const fetchNextPart = async () => {
+      try {
+        const response = await fetch(url, {
+          method: "GET", headers: {
+            Range: `bytes=${_next_offset}-`,
+          },
         });
+
+        if (response.status !== 206 && response.status !== 200) {
+          throw new Error(`Non 200/206 response was received: ${response.status}`);
+        }
+
+        const mime = response.headers.get("Content-Type").split(";")[0];
+        if (!mime.startsWith("audio/")) {
+          logger.error(
+            "Get non audio response with MIME type " + mime,
+            fileName
+          );
+          throw new Error(`Get non audio response with MIME type ${mime}`);
+        }
+
+        const match = response.headers.get("Content-Range").match(contentRangeRegex);
+        const startOffset = parseInt(match[1]);
+        const endOffset = parseInt(match[2]);
+        const totalSize = parseInt(match[3]);
+
+        if (startOffset !== _next_offset) {
+          logger.error("Gap detected between responses.");
+          logger.info("Last offset: " + _next_offset);
+          logger.info("New start offset " + match[1]);
+          throw new Error("Gap detected between responses.");
+        }
+        if (_total_size && totalSize !== _total_size) {
+          logger.error("Total size differs");
+          throw new Error("Total size differs");
+        }
+
+        _next_offset = endOffset + 1;
+        _total_size = totalSize;
+
+        const blob = await response.blob();
+        downloadData.blobs.get(url).push(blob);
+
+        downloadData.progressBar = formatProgress(_next_offset, _total_size);
+
+        if (_next_offset < _total_size) {
+          fetchNextPart();
+        } else {
+          save(messageId);
+        }
+      } catch (error) {
+        logger.error(error.message, fileName);
+        unregisterMessage(messageId)
+      }
     };
 
     const save = () => {
-      logger.info(
-        "Finish downloading blobs. Concatenating blobs and downloading...",
-        fileName
-      );
-
-      let blob = new Blob(_blobs, { type: "audio/ogg" });
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      logger.info("Final blob size in bytes: " + blob.size, fileName);
-
-      blob = 0;
+      const chunks = audioDownloadsMap.get(messageId).blobs.get(url);
+      const fullBlob = new Blob(chunks, {type: "audio/ogg"});
+      const blobUrl = window.URL.createObjectURL(fullBlob);
 
       const a = document.createElement("a");
       document.body.appendChild(a);
@@ -428,42 +617,14 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
+      unregisterMessage(messageId);
+
       logger.info("Download triggered", fileName);
     };
 
-    const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
-      (() => {
-        try {
-          return unsafeWindow.self === unsafeWindow.top;
-        } catch {
-          return false;
-        }
-      })();
-    if (supportsFileSystemAccess) {
-      unsafeWindow
-        .showSaveFilePicker({
-          suggestedName: fileName,
-        })
-        .then((handle) => {
-          handle
-            .createWritable()
-            .then((writable) => {
-              fetchNextPart(writable);
-            })
-            .catch((err) => {
-              console.error(err.name, err.message);
-            });
-        })
-        .catch((err) => {
-          if (err.name !== "AbortError") {
-            console.error(err.name, err.message);
-          }
-        });
-    } else {
-      fetchNextPart(null);
+      fetchNextPart();
     }
-  };
+
 
   const tel_download_image = (imageUrl) => {
     const fileName =
@@ -638,45 +799,8 @@
   // For webk /k/ webapp
   setInterval(() => {
     /* Voice Message */
-    const pinnedAudio = document.body.querySelector(".pinned-audio");
-    let dataMid;
-    let downloadButtonPinnedAudio =
-      document.body.querySelector("._tel_download_button_pinned_container") ||
-      document.createElement("button");
-    if (pinnedAudio) {
-      dataMid = pinnedAudio.getAttribute("data-mid");
-      downloadButtonPinnedAudio.className =
-        "btn-icon tgico-download _tel_download_button_pinned_container";
-      downloadButtonPinnedAudio.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
-    }
-    const voiceMessages = document.body.querySelectorAll("audio-element");
-    voiceMessages.forEach((voiceMessage) => {
-      const bubble = voiceMessage.closest(".bubble");
-      if (
-        !bubble ||
-        bubble.querySelector("._tel_download_button_pinned_container")
-      ) {
-        return; /* Skip if there's already a download button */
-      }
-      if (
-        dataMid &&
-        downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid &&
-        voiceMessage.getAttribute("data-mid") === dataMid
-      ) {
-        downloadButtonPinnedAudio.onclick = (e) => {
-          e.stopPropagation();
-          tel_download_audio(link);
-        };
-        downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
-        const link =
-          voiceMessage.audio && voiceMessage.audio.getAttribute("src");
-        if (link) {
-          pinnedAudio
-            .querySelector(".pinned-container-wrapper-utils")
-            .appendChild(downloadButtonPinnedAudio);
-        }
-      }
-    });
+    addContextMenuDownloadItem()
+    addAudioDownloadButton()
 
     // Stories
     const storiesContainer = document.getElementById("stories-viewer");
