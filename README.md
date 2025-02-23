@@ -73,6 +73,8 @@ There are 2 different versions of telegram webapps:
 
 This script should work on both versions of webapp, but some features are only available in the /k/ version (such as voice message downloads). If certain features are not working, switching to the /k/ version is recommended.
 
+Note: Some features, like audio message and circle video download, is currently limited to /k/ webpp only.
+
 ### Check Downloading Progress
 A progress bar will show on the bottom-right of the screen for videos. You can also check [DevTools console](https://developer.chrome.com/docs/devtools/open/) for logs.
 
