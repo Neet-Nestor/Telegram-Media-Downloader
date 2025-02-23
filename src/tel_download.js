@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器
 // @name:zh-TW   Telegram 受限圖片影片下載器
 // @name:ru      Telegram: загрузчик медиафайлов
-// @version      1.205
+// @version      1.206
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
@@ -196,7 +196,6 @@
         const metaDiv = audioElement.querySelector('.meta')
         metaDiv.innerHTML = audioDownloadsMap.get(messageId).progressBar;
 
-        // прекратить загрузку
         downloadBtn.onclick = () => {
           const span = document.createElement('span');
           span.className = 'duration'
