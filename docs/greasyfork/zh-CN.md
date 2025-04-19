@@ -27,9 +27,10 @@
 ### 支持的 Webapp 版本
 Telegram 网页版有两个不同的版本：
 
-https://webk.telegram.org / https://web.telegram.org/k/
-https://webz.telegram.org / https://web.telegram.org/a/
-这个脚本应该适用于这两个版本的网页版。如果你使用的是其他版本的网页版，发现这个脚本无效，请在我们的[GitHub页面](https://github.com/Neet-Nestor/Telegram-Media-Downloader)上提出问题。
+- https://webk.telegram.org / https://web.telegram.org/k/ （推荐）
+- https://webz.telegram.org / https://web.telegram.org/a/
+
+这个脚本主要功能应该适用于这两个版本的网页版，但有些功能只在/k/版本有效（如语音消息下载），因此当有些功能无法使用时建议切换到/k/版本。
 
 ### 检查下载进度
 如果你想要检查当前的下载进度，你可以查看页面右下角的进度条（如果下载的是视频）或者[打开浏览器的开发者工具 -> 控制台](https://developer.chrome.com/docs/devtools/open/)查看文本输出。

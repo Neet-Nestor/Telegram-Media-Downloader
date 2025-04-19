@@ -25,10 +25,10 @@ For videos, a progress bar will show on the bottom-right corder after you starte
 
 ### Supported Webapp Versions
 There are 2 different versions of telegram webapps:
-- https://webk.telegram.org / https://web.telegram.org/k/
+- https://webk.telegram.org / https://web.telegram.org/k/ (**Recommended**)
 - https://webz.telegram.org / https://web.telegram.org/a/
 
-This script should work on both versions of webapp. If you are using another different version of webapp and find this script does not work, please raise an issue to our [GitHub repo](https://github.com/Neet-Nestor/Telegram-Media-Downloader/issues). 
+This script should work on both versions of webapp, but some features are only available in the /k/ version (such as voice message downloads). If certain features are not working, switching to the /k/ version is recommended.
 
 ### Check Downloading Progress
 A progress bar will show on the bottom-right of the screen for videos. You can also check [DevTools console](https://developer.chrome.com/docs/devtools/open/) for logs.

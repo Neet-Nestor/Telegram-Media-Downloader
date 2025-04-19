@@ -33,7 +33,7 @@ Telegram 網頁版目前有兩個主要版本：
 - **https://webk.telegram.org / https://web.telegram.org/k/**  
 - **https://webz.telegram.org / https://web.telegram.org/a/**  
 
-本腳本應該適用於**這兩個版本**的 Telegram Web。如果你使用其他版本的網頁版，發現腳本無法正常運作，請前往 [GitHub 頁面](https://github.com/Neet-Nestor/Telegram-Media-Downloader) 回報問題。  
+本腳本應該適用於**這兩個版本**的 Telegram Web。但有些功能僅在/k/版本有效（例如語音消息下載），因此當某些功能無法使用時，建議切換到/k/版本。
 
 ### **如何檢查下載進度**  
 
