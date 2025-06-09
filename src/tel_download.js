@@ -1,25 +1,23 @@
 // ==UserScript==
-// @name         Telegram Media Downloader (Anan's Fork)
-// @name:en      Telegram Media Downloader (Anan's Fork)
-// @name:zh-CN   Telegram 媒体下载器 (Anan 修改版)
-// @name:zh-TW   Telegram 媒體下載器 (Anan 修改版)
-// @name:ru      Telegram: загрузчик медиафайлов (форк Anan)
-// @version      1.206-anan1
-// @namespace    https://github.com/anan139/Telegram-Media-Downloader
-// @description  Forked version of Nestor Qin's script. Modified by Anan for custom features or fixes.
-// @description:en  Forked version of Nestor Qin's script. Modified by Anan for custom features or fixes.
-// @description:ru Форк скрипта Nestor Qin. Изменён Anan для дополнительных функций или исправлений.
-// @description:zh-CN Nestor Qin 脚本的修改版。由 Anan 修改，添加了自定义功能或修复。
-// @description:zh-TW Nestor Qin 指令碼的修改版。由 Anan 修改，加入自訂功能或修正。
-// @author       Anan (original: Nestor Qin)
+// @name         Telegram Media Downloader
+// @name:en      Telegram Media Downloader
+// @name:zh-CN   Telegram 受限图片视频下载器
+// @name:zh-TW   Telegram 受限圖片影片下載器
+// @name:ru      Telegram: загрузчик медиафайлов
+// @version      1.206
+// @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
+// @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
+// @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
+// @description:ru Загружайте изображения, GIF-файлы, видео и голосовые сообщения в веб-приложении Telegram из частных каналов, которые отключили загрузку и ограничили сохранение контента
+// @description:zh-CN 从禁止下载的Telegram频道中下载图片、视频及语音消息
+// @description:zh-TW 從禁止下載的 Telegram 頻道中下載圖片、影片及語音訊息
+// @author       Nestor Qin
 // @license      GNU GPLv3
-// @website      https://github.com/anan139/Telegram-Media-Downloader
+// @website      https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @match        https://web.telegram.org/*
 // @match        https://webk.telegram.org/*
 // @match        https://webz.telegram.org/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
-// @homepageURL  https://github.com/anan139/Telegram-Media-Downloader
-// @supportURL   https://github.com/anan139/Telegram-Media-Downloader/issues
 // ==/UserScript==
 
 
