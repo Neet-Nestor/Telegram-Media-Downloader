@@ -36,8 +36,8 @@
   };
   // Unicode values for icons (used in /k/ app)
   // https://github.com/morethanwords/tweb/blob/master/src/icons.ts
-  const DOWNLOAD_ICON = "\uE95B";
-  const FORWARD_ICON = "\uE976";
+  const DOWNLOAD_ICON = "\uE95E";
+  const FORWARD_ICON = "\uE97A";
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
   const hashCode = (s) => {
