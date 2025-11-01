@@ -1165,14 +1165,51 @@
   };
 
   const getMessageDate = (element) => {
+    // Try multiple selectors for Telegram's time elements
     const timeEl = element.querySelector(".time") ||
                    element.querySelector(".message-time") ||
-                   element.querySelector("[datetime]");
+                   element.querySelector(".Time") ||
+                   element.querySelector(".Message__time") ||
+                   element.querySelector("[class*='time']") ||
+                   element.querySelector("[class*='Time']") ||
+                   element.querySelector("[datetime]") ||
+                   element.querySelector(".i18n");
 
     if (timeEl) {
-      const datetime = timeEl.getAttribute("datetime") || timeEl.textContent;
-      return new Date(datetime).getTime() || Date.now();
+      // Try multiple ways to extract the date
+      const datetime = timeEl.getAttribute("datetime") ||
+                      timeEl.getAttribute("data-timestamp") ||
+                      timeEl.getAttribute("title") ||
+                      timeEl.textContent;
+
+      if (datetime) {
+        const parsed = new Date(datetime).getTime();
+        if (!isNaN(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
     }
+
+    // Try to get data-timestamp from the bubble/message itself
+    const bubbleTimestamp = element.getAttribute("data-timestamp") ||
+                           element.getAttribute("data-date");
+    if (bubbleTimestamp) {
+      const parsed = parseInt(bubbleTimestamp) * (bubbleTimestamp.length === 10 ? 1000 : 1);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    // Last resort: look for any element with timestamp-like attributes
+    const anyTimeEl = element.querySelector("[data-timestamp]");
+    if (anyTimeEl) {
+      const ts = parseInt(anyTimeEl.getAttribute("data-timestamp"));
+      if (!isNaN(ts) && ts > 0) {
+        return ts * (ts.toString().length === 10 ? 1000 : 1);
+      }
+    }
+
+    logger.warn(`Could not extract date from message, using current time. Element classes: ${element.className}`);
     return Date.now();
   };
 
@@ -1533,6 +1570,39 @@
   };
 
   logger.info("Initialized");
+
+  // Debug helper: expose function to inspect message structure
+  window.tel_debug_inspect_message = () => {
+    const bubbles = document.querySelectorAll(".bubble") || document.querySelectorAll(".Message");
+    if (bubbles.length > 0) {
+      const bubble = bubbles[0];
+      console.log("=== INSPECTING FIRST MESSAGE BUBBLE ===");
+      console.log("Element:", bubble);
+      console.log("Classes:", bubble.className);
+      console.log("Attributes:", Array.from(bubble.attributes).map(a => `${a.name}="${a.value}"`));
+      console.log("\n--- Looking for time element ---");
+
+      const selectors = [".time", ".message-time", ".Time", ".Message__time", "[class*='time']", "[datetime]", ".i18n"];
+      selectors.forEach(sel => {
+        const el = bubble.querySelector(sel);
+        if (el) {
+          console.log(`Found with selector '${sel}':`, el);
+          console.log(`  textContent: ${el.textContent}`);
+          console.log(`  datetime attr: ${el.getAttribute("datetime")}`);
+          console.log(`  data-timestamp: ${el.getAttribute("data-timestamp")}`);
+          console.log(`  title: ${el.getAttribute("title")}`);
+        }
+      });
+
+      console.log("\n--- All elements with 'time' in class name ---");
+      bubble.querySelectorAll("[class*='time'], [class*='Time']").forEach(el => {
+        console.log(el, "Class:", el.className, "Text:", el.textContent);
+      });
+    } else {
+      console.log("No .bubble or .Message elements found");
+    }
+  };
+  logger.info("Debug helper available: Run tel_debug_inspect_message() in console to inspect message structure");
 
   // Original functionality for webz /a/ webapp
   setInterval(() => {
