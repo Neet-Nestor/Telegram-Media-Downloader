@@ -816,7 +816,7 @@
     let html = `
       <div style="user-select: text;">
         <h3 style="margin: 0 0 1rem 0; user-select: text;">Status</h3>
-        <p style="user-select: text;"><strong>Total media:</strong> ${total}</p>
+        <p style="user-select: text;"><strong>Found so far:</strong> ${total}${isAutoDownloading ? ' (scanning...)' : ''}</p>
         <p style="user-select: text;"><strong>Downloaded:</strong> ${downloaded}</p>
         <p style="user-select: text;"><strong>Skipped:</strong> ${skipped}</p>
         <p style="user-select: text;"><strong>Failed:</strong> ${failed}</p>
@@ -835,7 +835,7 @@
       `;
 
       failedItems.forEach(([mediaId, media]) => {
-        const position = mediaIdOrder.indexOf(mediaId) + 1;
+        const position = mediaIdOrder.length - mediaIdOrder.indexOf(mediaId);
         html += `
           <div style="padding: 0.5rem; margin-bottom: 0.5rem; background: rgba(244,67,54,0.1); border-left: 3px solid #f44336; border-radius: 4px; user-select: text;">
             <div style="user-select: text;"><strong style="user-select: text;">✗ #${position} - ${media.filename || media.type.toUpperCase()}</strong></div>
@@ -856,11 +856,11 @@
           <div style="max-height: 400px; overflow-y: auto; border: 1px solid #888; border-radius: 4px; padding: 0.5rem; user-select: text;">
       `;
 
-      // Show all items in order
+      // Show all items in order (newest first)
       for (let i = mediaIdOrder.length - 1; i >= 0; i--) {
         const mediaId = mediaIdOrder[i];
         const media = mediaMap.get(mediaId);
-        const position = i + 1;
+        const position = mediaIdOrder.length - i; // #1 = newest
 
         if (media) {
           const status = media.status || (media.needsClick ? "needs-load" : "ready");
@@ -1008,13 +1008,14 @@
     startBtn.textContent = "Initializing...";
     startBtn.style.background = "#999";
 
-    // Step 1: Scan entire chat
+    // Step 1: Initial scan to find currently visible media
     await scanEntireChat();
 
-    // Step 2: Setup auto-loader
+    // Step 2: Setup auto-loader for lazy-loading video URLs
     setupIntersectionObserver();
 
     // Step 3: Start sequential download (from newest to oldest)
+    // NOTE: Queue will grow dynamically as we scroll up and find more videos
     isAutoDownloading = true;
     autoDownloadPaused = false;
     bulkDownloadState.active = true;
@@ -1023,9 +1024,10 @@
     startBtn.style.display = "none";
     pauseBtn.style.display = "block";
 
-    logger.info(`Starting auto-download of ${mediaIdOrder.length} items (newest → oldest)`);
+    logger.info(`Starting auto-download of ${mediaIdOrder.length} items found so far (newest → oldest)`);
+    logger.info(`Queue will expand as we scroll up and discover more videos`);
 
-    // Step 4: Process queue
+    // Step 4: Process queue (will continue scanning as it downloads)
     processDownloadQueue();
   };
 
@@ -1104,6 +1106,15 @@
     }
 
     await new Promise(resolve => setTimeout(resolve, CONFIG.SCROLL_ANIMATION_DELAY));
+
+    // After scrolling, detect any NEW videos that appeared
+    const previousCount = mediaIdOrder.length;
+    findMediaMessages();
+    const newCount = mediaIdOrder.length;
+    if (newCount > previousCount) {
+      logger.info(`🔍 Found ${newCount - previousCount} new videos while scrolling (total now: ${newCount})`);
+      updateSidebarStatus();
+    }
 
     // If video needs loading, try to load it
     if (media.needsClick && media.type === "video") {
