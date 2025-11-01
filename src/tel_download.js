@@ -801,11 +801,22 @@
     const needsLoading = Array.from(mediaMap.values()).filter(m => m.needsClick).length;
     const loaded = Array.from(mediaMap.values()).filter(m => !m.needsClick && m.type === "video").length;
 
+    const formatDate = (timestamp) => {
+      if (!timestamp) return "Unknown date";
+      const date = new Date(timestamp);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+
     let html = `
       <div style="user-select: text;">
         <h3 style="margin: 0 0 1rem 0; user-select: text;">Status</h3>
         <p style="user-select: text;"><strong>Total media:</strong> ${total}</p>
-        <p style="user-select: text;"><strong>Progress:</strong> ${currentIndex} / ${total}</p>
         <p style="user-select: text;"><strong>Downloaded:</strong> ${downloaded}</p>
         <p style="user-select: text;"><strong>Skipped:</strong> ${skipped}</p>
         <p style="user-select: text;"><strong>Failed:</strong> ${failed}</p>
@@ -814,15 +825,42 @@
       </div>
     `;
 
-    // Show upcoming downloads
-    if (total > 0) {
-      html += `<div style="margin-top: 1.5rem; user-select: text;"><h3 style="margin: 0 0 0.5rem 0; user-select: text;">Queue</h3><div style="user-select: text;">`;
+    // Show failed downloads section
+    const failedItems = Array.from(mediaMap.entries()).filter(([id, media]) => media.status === "failed");
+    if (failedItems.length > 0) {
+      html += `
+        <div style="margin-top: 1.5rem; user-select: text;">
+          <h3 style="margin: 0 0 0.5rem 0; color: #f44336; user-select: text;">Failed Downloads (${failedItems.length})</h3>
+          <div style="max-height: 200px; overflow-y: auto; border: 1px solid #f44336; border-radius: 4px; padding: 0.5rem; user-select: text;">
+      `;
 
-      const upcomingCount = Math.min(5, total - currentIndex);
-      for (let i = 0; i < upcomingCount; i++) {
-        const idx = currentIndex + i;
-        const mediaId = mediaIdOrder[idx];
+      failedItems.forEach(([mediaId, media]) => {
+        const position = mediaIdOrder.indexOf(mediaId) + 1;
+        html += `
+          <div style="padding: 0.5rem; margin-bottom: 0.5rem; background: rgba(244,67,54,0.1); border-left: 3px solid #f44336; border-radius: 4px; user-select: text;">
+            <div style="user-select: text;"><strong style="user-select: text;">✗ #${position} - ${media.type.toUpperCase()}</strong></div>
+            <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">ID: ${mediaId}</div>
+            <div style="font-size: 0.85rem; color: #888; user-select: text;">Date: ${formatDate(media.date)}</div>
+          </div>
+        `;
+      });
+
+      html += `</div></div>`;
+    }
+
+    // Show full queue with all items
+    if (total > 0) {
+      html += `
+        <div style="margin-top: 1.5rem; user-select: text;">
+          <h3 style="margin: 0 0 0.5rem 0; user-select: text;">Queue (${total} items)</h3>
+          <div style="max-height: 400px; overflow-y: auto; border: 1px solid #888; border-radius: 4px; padding: 0.5rem; user-select: text;">
+      `;
+
+      // Show all items in order
+      for (let i = mediaIdOrder.length - 1; i >= 0; i--) {
+        const mediaId = mediaIdOrder[i];
         const media = mediaMap.get(mediaId);
+        const position = i + 1;
 
         if (media) {
           const status = media.status || (media.needsClick ? "needs-load" : "ready");
@@ -838,11 +876,18 @@
             status === "needs-load" ? "#ff9800" :
             status === "failed" ? "#f44336" : "#888";
 
+          const isCurrent = i === currentIndex && isAutoDownloading;
+          const bgColor = isCurrent ? "rgba(33,150,243,0.2)" : "rgba(128,128,128,0.1)";
+
           html += `
-            <div style="padding: 0.5rem; margin-bottom: 0.25rem; background: rgba(128,128,128,0.1); border-radius: 4px; user-select: text;">
-              <span style="color: ${statusColor}; user-select: text;">${statusIcon}</span>
-              <span style="user-select: text;"> ${idx + 1}. ${media.type}</span>
-              ${i === 0 && isAutoDownloading ? '<strong style="user-select: text;"> (Current)</strong>' : ''}
+            <div style="padding: 0.5rem; margin-bottom: 0.25rem; background: ${bgColor}; border-radius: 4px; ${isCurrent ? 'border: 2px solid #2196f3;' : ''} user-select: text;">
+              <div style="user-select: text;">
+                <span style="color: ${statusColor}; user-select: text;">${statusIcon}</span>
+                <strong style="user-select: text;"> #${position} - ${media.type.toUpperCase()}</strong>
+                ${isCurrent ? '<span style="color: #2196f3; user-select: text;"> ◀ CURRENT</span>' : ''}
+              </div>
+              <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">ID: ${mediaId}</div>
+              <div style="font-size: 0.85rem; color: #888; user-select: text;">Date: ${formatDate(media.date)}</div>
             </div>
           `;
         }
