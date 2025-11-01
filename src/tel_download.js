@@ -693,6 +693,24 @@
     pauseBtn.onmouseout = () => pauseBtn.style.background = "#ff9800";
     pauseBtn.onclick = () => togglePauseDownload();
 
+    const rescanBtn = document.createElement("button");
+    rescanBtn.id = "tel-rescan-continue";
+    rescanBtn.textContent = "🔄 Re-scan & Resume";
+    rescanBtn.style.cssText = `
+      padding: 0.75rem;
+      background: #9c27b0;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.2s;
+    `;
+    rescanBtn.onmouseover = () => rescanBtn.style.background = "#7b1fa2";
+    rescanBtn.onmouseout = () => rescanBtn.style.background = "#9c27b0";
+    rescanBtn.onclick = () => rescanAndResume();
+
     const downloadsBtn = document.createElement("button");
     downloadsBtn.id = "tel-open-downloads-static";
     downloadsBtn.innerHTML = "📁 Open Downloads Folder";
@@ -743,6 +761,7 @@
 
     buttonArea.appendChild(startAutoBtn);
     buttonArea.appendChild(pauseBtn);
+    buttonArea.appendChild(rescanBtn);
     buttonArea.appendChild(downloadsBtn);
     buttonArea.appendChild(closeBtn);
 
@@ -787,6 +806,7 @@
   const toggleSidebar = () => {
     const sidebar = document.getElementById("tel-bulk-sidebar");
     const tab = document.getElementById("tel-bulk-tab");
+    const floatingBtn = document.getElementById("tel-bulk-download-floating");
 
     if (!sidebar || !tab) return;
 
@@ -795,11 +815,13 @@
       sidebar.style.transform = "translateX(100%)";
       sidebar.classList.remove("tel-sidebar-expanded");
       tab.style.display = "flex";
+      if (floatingBtn) floatingBtn.style.display = "flex"; // Show floating button
     } else {
       // Expand
       sidebar.style.transform = "translateX(0)";
       sidebar.classList.add("tel-sidebar-expanded");
       tab.style.display = "none";
+      if (floatingBtn) floatingBtn.style.display = "none"; // Hide floating button
     }
   };
 
@@ -851,11 +873,17 @@
       <div style="user-select: text;">
         <h3 style="margin: 0 0 1rem 0; user-select: text;">Status</h3>
         <p style="user-select: text;"><strong>Found so far:</strong> ${total}${isAutoDownloading ? ' (scanning...)' : ''}</p>
-        <p style="user-select: text;"><strong>Downloaded:</strong> ${downloaded}</p>
+        <p style="user-select: text;"><strong>✓ Downloaded:</strong> ${downloaded}</p>
         <p style="user-select: text;"><strong>Skipped:</strong> ${skipped}</p>
-        <p style="user-select: text;"><strong>Failed:</strong> ${failed}</p>
-        ${needsLoading > 0 ? `<p style="color: #ff9800; user-select: text;"><strong>Videos needing URL load:</strong> ${needsLoading}</p>` : ''}
-        ${loaded > 0 ? `<p style="color: #4caf50; user-select: text;"><strong>Videos with URLs loaded:</strong> ${loaded}</p>` : ''}
+        <p style="user-select: text;"><strong>✗ Failed:</strong> ${failed}</p>
+        ${needsLoading > 0 ? `<p style="color: #ff9800; user-select: text;"><strong>⚠ Waiting for URL:</strong> ${needsLoading} <span style="font-size: 0.85rem;">(Telegram hasn't loaded video URLs yet - script will try to auto-load)</span></p>` : ''}
+        ${loaded > 0 ? `<p style="color: #4caf50; user-select: text;"><strong>⏳ Ready to download:</strong> ${loaded}</p>` : ''}
+
+        <div style="margin-top: 0.75rem; padding: 0.5rem; background: rgba(128,128,128,0.1); border-radius: 4px; font-size: 0.85rem; user-select: text;">
+          <strong>Legend:</strong><br/>
+          ⏬ = Downloading now | ✓ = Success | ✗ = Failed<br/>
+          ⚠ = Needs URL (will auto-try) | ⏳ = Ready
+        </div>
       </div>
     `;
 
@@ -984,6 +1012,35 @@
   };
 
   // ===== ONE-CLICK AUTO-DOWNLOAD WORKFLOW =====
+
+  const rescanAndResume = () => {
+    logger.info("🔄 Re-scanning current page...");
+
+    const previousCount = mediaIdOrder.length;
+    const newlyFound = findMediaMessages();
+
+    logger.info(`Previous: ${previousCount} | After re-scan: ${mediaIdOrder.length} | Newly found: ${newlyFound}`);
+
+    if (newlyFound > 0) {
+      logger.info(`✓ Found ${newlyFound} new videos!`);
+    } else {
+      logger.info("No new videos found in current view");
+    }
+
+    updateSidebarStatus();
+
+    // If not currently downloading, start from the newest found item
+    if (!isAutoDownloading) {
+      if (mediaIdOrder.length > 0) {
+        logger.info("Starting download from newest video...");
+        startAutoDownload();
+      } else {
+        alert("No media found! Scroll through the chat to load some videos first.");
+      }
+    } else {
+      logger.info("Already downloading, new items added to queue");
+    }
+  };
 
   const startAutoDownload = async () => {
     logger.info("Starting auto-download workflow...");
@@ -1670,6 +1727,10 @@
     };
 
     createSidebarUI();
+
+    // Hide floating button when sidebar is open
+    const floatingBtn = document.getElementById("tel-bulk-download-floating");
+    if (floatingBtn) floatingBtn.style.display = "none";
 
     logger.info(`Sidebar opened with ${count} media items`);
   };
