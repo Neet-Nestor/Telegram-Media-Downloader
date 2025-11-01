@@ -43,7 +43,7 @@
   const CONFIG = {
     REFRESH_DELAY: 500,
     VIDEO_LOAD_TIMEOUT: 1000,
-    SCROLL_ANIMATION_DELAY: 500,
+    SCROLL_ANIMATION_DELAY: 1200, // Increased from 500 to give Telegram time to load
     DOWNLOAD_DELAY: 300,
     HIGHLIGHT_DURATION: 1500,
     SCROLL_INCREMENT: 800,
@@ -1134,9 +1134,9 @@
       consecutiveNoNewVideos++;
       logger.info(`No new videos found (${consecutiveNoNewVideos} consecutive scans)`);
 
-      // Stop if we haven't found new videos in 5 consecutive scrolls (reached top of chat)
-      if (consecutiveNoNewVideos >= 5 && currentIndex < 5) {
-        logger.info("🏁 Reached top of chat - no more videos to download");
+      // Stop if we haven't found new videos in 10 consecutive scrolls (reached top of chat)
+      if (consecutiveNoNewVideos >= 10) {
+        logger.info("🏁 Reached top of chat - no more videos found after 10 consecutive scans");
         logger.info(`✓ Downloaded ${bulkDownloadState.downloaded} videos, ${bulkDownloadState.failed} failed`);
 
         isAutoDownloading = false;
@@ -1369,10 +1369,20 @@
       return null;
     }
 
+    // Scroll to START (top of viewport) to trigger Telegram to load older messages above
     element.scrollIntoView({
       behavior: "smooth",
-      block: "center"
+      block: "start"  // Changed from "center" to "start" to scroll further up
     });
+
+    // Additionally scroll UP by 500px to aggressively trigger pagination
+    const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
+                           document.querySelector(".bubbles-inner");
+    if (scrollContainer) {
+      setTimeout(() => {
+        scrollContainer.scrollTop -= 500; // Scroll 500px up to load older messages
+      }, 300);
+    }
 
     // Highlight
     const originalBg = element.style.backgroundColor;
