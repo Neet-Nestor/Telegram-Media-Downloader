@@ -71,6 +71,7 @@
   let autoLoadObserver = null;
   let isAutoDownloading = false;
   let autoDownloadPaused = false;
+  let consecutiveNoNewVideos = 0; // Track when we've stopped finding new videos
 
   let bulkDownloadState = {
     active: false,
@@ -996,29 +997,42 @@
     }
 
     startBtn.disabled = true;
-    startBtn.textContent = "Initializing...";
+    startBtn.textContent = "Starting...";
     startBtn.style.background = "#999";
 
-    // Step 1: Initial scan to find currently visible media
-    await scanEntireChat();
+    // Step 1: Find ONLY currently visible media (no pre-scan)
+    logger.info("🔍 Scanning currently visible media...");
+    const initialCount = findMediaMessages();
+    logger.info(`Found ${initialCount} visible media items`);
+
+    if (initialCount === 0) {
+      alert("No media found! Please scroll through the chat to load some videos first.");
+      startBtn.disabled = false;
+      startBtn.textContent = "Start Auto-Download";
+      startBtn.style.background = "#4caf50";
+      return;
+    }
 
     // Step 2: Setup auto-loader for lazy-loading video URLs
     setupIntersectionObserver();
 
     // Step 3: Start sequential download (from newest to oldest)
-    // NOTE: Queue will grow dynamically as we scroll up and find more videos
+    // NOTE: Queue will grow dynamically as we scroll up and Telegram loads more messages
     isAutoDownloading = true;
     autoDownloadPaused = false;
     bulkDownloadState.active = true;
     bulkDownloadState.currentIndex = mediaIdOrder.length - 1; // Start from newest (end of array)
+    consecutiveNoNewVideos = 0; // Reset counter for new session
 
     startBtn.style.display = "none";
     pauseBtn.style.display = "block";
 
-    logger.info(`Starting auto-download of ${mediaIdOrder.length} items found so far (newest → oldest)`);
-    logger.info(`Queue will expand as we scroll up and discover more videos`);
+    logger.info(`✓ Starting from newest video, will download backwards`);
+    logger.info(`🔄 Queue will expand dynamically as Telegram loads older messages`);
 
-    // Step 4: Process queue (will continue scanning as it downloads)
+    updateSidebarStatus();
+
+    // Step 4: Process queue (scans on-the-go as it downloads)
     processDownloadQueue();
   };
 
@@ -1050,7 +1064,8 @@
     const { currentIndex } = bulkDownloadState;
 
     if (currentIndex < 0) {
-      logger.info("All downloads completed!");
+      logger.info("✓ All downloads completed!");
+      logger.info(`Downloaded ${bulkDownloadState.downloaded} videos, ${bulkDownloadState.failed} failed`);
       isAutoDownloading = false;
 
       const startBtn = document.getElementById("tel-start-auto-download");
@@ -1062,6 +1077,13 @@
         startBtn.disabled = true;
       }
       if (pauseBtn) pauseBtn.style.display = "none";
+
+      // Scroll to bottom to prevent last video from auto-playing
+      const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
+                             document.querySelector(".bubbles-inner");
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight; // Scroll to newest messages
+      }
 
       updateSidebarStatus();
       return;
@@ -1098,13 +1120,46 @@
 
     await new Promise(resolve => setTimeout(resolve, CONFIG.SCROLL_ANIMATION_DELAY));
 
-    // After scrolling, detect any NEW videos that appeared
+    // After scrolling, detect any NEW videos that appeared (Telegram's pagination loads more)
     const previousCount = mediaIdOrder.length;
     findMediaMessages();
     const newCount = mediaIdOrder.length;
+
     if (newCount > previousCount) {
-      logger.info(`🔍 Found ${newCount - previousCount} new videos while scrolling (total now: ${newCount})`);
+      const newVideosFound = newCount - previousCount;
+      logger.info(`🔍 Found ${newVideosFound} new videos while scrolling (total now: ${newCount})`);
+      consecutiveNoNewVideos = 0; // Reset counter when we find new videos
       updateSidebarStatus();
+    } else {
+      consecutiveNoNewVideos++;
+      logger.info(`No new videos found (${consecutiveNoNewVideos} consecutive scans)`);
+
+      // Stop if we haven't found new videos in 5 consecutive scrolls (reached top of chat)
+      if (consecutiveNoNewVideos >= 5 && currentIndex < 5) {
+        logger.info("🏁 Reached top of chat - no more videos to download");
+        logger.info(`✓ Downloaded ${bulkDownloadState.downloaded} videos, ${bulkDownloadState.failed} failed`);
+
+        isAutoDownloading = false;
+        const startBtn = document.getElementById("tel-start-auto-download");
+        const pauseBtn = document.getElementById("tel-pause-download");
+
+        if (startBtn) {
+          startBtn.textContent = "All Done!";
+          startBtn.style.background = "#4caf50";
+          startBtn.disabled = true;
+        }
+        if (pauseBtn) pauseBtn.style.display = "none";
+
+        // Scroll to top to prevent last video from auto-playing
+        const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
+                               document.querySelector(".bubbles-inner");
+        if (scrollContainer) {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight; // Scroll to bottom (newest messages)
+        }
+
+        updateSidebarStatus();
+        return;
+      }
     }
 
     // If video needs loading, try to load it
