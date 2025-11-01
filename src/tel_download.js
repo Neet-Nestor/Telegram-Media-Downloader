@@ -46,9 +46,9 @@
     SCROLL_ANIMATION_DELAY: 500,
     DOWNLOAD_DELAY: 300,
     HIGHLIGHT_DURATION: 1500,
-    SCROLL_INCREMENT: 500,
-    SCROLL_WAIT_TIME: 800,
-    SAME_COUNT_THRESHOLD: 3,
+    SCROLL_INCREMENT: 800,
+    SCROLL_WAIT_TIME: 1500,
+    SAME_COUNT_THRESHOLD: 10,
     SCROLL_BOTTOM_THRESHOLD: 100,
     MAX_MEDIA_ITEMS: 10000,
     CLEANUP_THRESHOLD: 0.8,
@@ -692,6 +692,38 @@
     pauseBtn.onmouseout = () => pauseBtn.style.background = "#ff9800";
     pauseBtn.onclick = () => togglePauseDownload();
 
+    const downloadsBtn = document.createElement("button");
+    downloadsBtn.id = "tel-open-downloads-static";
+    downloadsBtn.innerHTML = "📁 Open Downloads Folder";
+    downloadsBtn.style.cssText = `
+      padding: 0.75rem;
+      background: #2196f3;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.2s;
+    `;
+    downloadsBtn.onmouseover = () => downloadsBtn.style.background = "#1976d2";
+    downloadsBtn.onmouseout = () => downloadsBtn.style.background = "#2196f3";
+    downloadsBtn.onclick = () => {
+      const isChrome = navigator.userAgent.includes("Chrome");
+      const isEdge = navigator.userAgent.includes("Edg");
+      const isFirefox = navigator.userAgent.includes("Firefox");
+
+      let downloadsUrl = "chrome://downloads/";
+      if (isEdge) {
+        downloadsUrl = "edge://downloads/";
+      } else if (isFirefox) {
+        downloadsUrl = "about:downloads";
+      }
+
+      window.open(downloadsUrl, "_blank");
+      logger.info(`Opening downloads page: ${downloadsUrl}`);
+    };
+
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "Close";
     closeBtn.style.cssText = `
@@ -710,6 +742,7 @@
 
     buttonArea.appendChild(startAutoBtn);
     buttonArea.appendChild(pauseBtn);
+    buttonArea.appendChild(downloadsBtn);
     buttonArea.appendChild(closeBtn);
 
     sidebar.appendChild(header);
@@ -896,49 +929,7 @@
       html += `</div></div>`;
     }
 
-    // Add button to open downloads folder
-    html += `
-      <div style="margin-top: 1.5rem; user-select: text;">
-        <button id="tel-open-downloads" style="
-          width: 100%;
-          padding: 0.75rem;
-          background: #4caf50;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          font-size: 1rem;
-          font-weight: bold;
-          cursor: pointer;
-          user-select: none;
-          transition: background 0.2s;
-        " onmouseover="this.style.background='#45a049'" onmouseout="this.style.background='#4caf50'">
-          📁 Open Downloads Folder
-        </button>
-      </div>
-    `;
-
     statusArea.innerHTML = html;
-
-    // Attach event listener to downloads button
-    const downloadsBtn = document.getElementById("tel-open-downloads");
-    if (downloadsBtn) {
-      downloadsBtn.onclick = () => {
-        // Detect browser and open appropriate downloads page
-        const isChrome = navigator.userAgent.includes("Chrome");
-        const isEdge = navigator.userAgent.includes("Edg");
-        const isFirefox = navigator.userAgent.includes("Firefox");
-
-        let downloadsUrl = "chrome://downloads/";
-        if (isEdge) {
-          downloadsUrl = "edge://downloads/";
-        } else if (isFirefox) {
-          downloadsUrl = "about:downloads";
-        }
-
-        window.open(downloadsUrl, "_blank");
-        logger.info(`Opening downloads page: ${downloadsUrl}`);
-      };
-    }
   };
 
   // ===== SMART AUTO-LOADING ENGINE =====
@@ -1539,40 +1530,57 @@
     }
 
     logger.info("Starting full chat scan...");
+    logger.info("Scrolling to top (oldest messages) to ensure all messages are loaded...");
 
+    // First, scroll all the way to the top to trigger Telegram to load ALL messages
     scrollContainer.scrollTop = 0;
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     let previousCount = 0;
     let sameCountIterations = 0;
     let scrollPosition = 0;
+    let totalIterations = 0;
+    const MAX_ITERATIONS = 200; // Safety limit to prevent infinite loops
 
-    while (sameCountIterations < CONFIG.SAME_COUNT_THRESHOLD) {
+    logger.info("Now scrolling down to detect all media...");
+
+    while (sameCountIterations < CONFIG.SAME_COUNT_THRESHOLD && totalIterations < MAX_ITERATIONS) {
       scrollPosition += CONFIG.SCROLL_INCREMENT;
       scrollContainer.scrollTop = scrollPosition;
 
       await new Promise(resolve => setTimeout(resolve, CONFIG.SCROLL_WAIT_TIME));
 
       const currentCount = findMediaMessages();
+      totalIterations++;
 
       if (statusArea) {
-        statusArea.innerHTML = `<p style="user-select: text;"><strong>Scanning chat...</strong></p><p style="user-select: text;">Found: ${currentCount} media items</p>`;
+        statusArea.innerHTML = `<p style="user-select: text;"><strong>Scanning chat...</strong></p><p style="user-select: text;">Found: ${mediaMap.size} media items</p><p style="font-size: 0.85rem; color: #888; user-select: text;">Iteration ${totalIterations}</p>`;
       }
+
+      logger.info(`Scan iteration ${totalIterations}: Found ${mediaMap.size} total media items (${currentCount} in this pass)`);
 
       if (currentCount === previousCount) {
         sameCountIterations++;
+        logger.info(`No new media found (${sameCountIterations}/${CONFIG.SAME_COUNT_THRESHOLD})`);
       } else {
         sameCountIterations = 0;
         previousCount = currentCount;
       }
 
-      if (scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - CONFIG.SCROLL_BOTTOM_THRESHOLD) {
+      // Check if we've reached the bottom
+      const isAtBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - CONFIG.SCROLL_BOTTOM_THRESHOLD;
+      if (isAtBottom) {
+        logger.info("Reached bottom of chat");
         break;
       }
     }
 
+    if (totalIterations >= MAX_ITERATIONS) {
+      logger.warn(`Scan stopped at safety limit (${MAX_ITERATIONS} iterations)`);
+    }
+
     const finalCount = findMediaMessages();
-    logger.info(`Chat scan complete. Found ${finalCount} media items`);
+    logger.info(`✓ Chat scan complete. Found ${mediaMap.size} total media items`);
 
     updateSidebarStatus();
   };
