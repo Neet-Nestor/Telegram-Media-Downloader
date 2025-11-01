@@ -65,13 +65,14 @@
   const REFRESH_DELAY = CONFIG.REFRESH_DELAY;
 
   // ===== BULK DOWNLOAD STATE - MAP-BASED ARCHITECTURE =====
-  let mediaMap = new Map(); // Key: messageId, Value: { id, type, url, date, needsClick, selector, status }
+  let mediaMap = new Map(); // Key: messageId, Value: { id, type, url, date, needsClick, selector, status, displayNumber }
   let mediaIdOrder = []; // Ordered array of message IDs (chronological order)
   let downloadInProgress = false;
   let autoLoadObserver = null;
   let isAutoDownloading = false;
   let autoDownloadPaused = false;
   let consecutiveNoNewVideos = 0; // Track when we've stopped finding new videos
+  let nextDisplayNumber = 1; // Permanent display number, never changes
 
   let bulkDownloadState = {
     active: false,
@@ -706,6 +707,7 @@
       font-size: 0.9rem;
       font-weight: 600;
       transition: background 0.2s;
+      display: none;
     `;
     rescanBtn.onmouseover = () => rescanBtn.style.background = "#7b1fa2";
     rescanBtn.onmouseout = () => rescanBtn.style.background = "#9c27b0";
@@ -897,12 +899,17 @@
       `;
 
       failedItems.forEach(([mediaId, media]) => {
-        const position = mediaIdOrder.length - mediaIdOrder.indexOf(mediaId);
+        const failedDateLabel = (() => {
+          if (!media.date) return "unknown";
+          const d = new Date(media.date);
+          const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+          return `${months[d.getMonth()]}${d.getDate()}_${d.getFullYear()}`;
+        })();
+
         html += `
           <div style="padding: 0.5rem; margin-bottom: 0.5rem; background: rgba(244,67,54,0.1); border-left: 3px solid #f44336; border-radius: 4px; user-select: text;">
-            <div style="user-select: text;"><strong style="user-select: text;">✗ #${position} - ${media.filename || media.type.toUpperCase()}</strong></div>
+            <div style="user-select: text;"><strong style="user-select: text;">✗ ${failedDateLabel} - ${media.filename || media.type.toUpperCase()}</strong></div>
             <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">Type: ${media.type.toUpperCase()}</div>
-            <div style="font-size: 0.85rem; color: #888; user-select: text;">Date: ${formatDate(media.date)}</div>
           </div>
         `;
       });
@@ -922,7 +929,14 @@
       for (let i = mediaIdOrder.length - 1; i >= 0; i--) {
         const mediaId = mediaIdOrder[i];
         const media = mediaMap.get(mediaId);
-        const position = mediaIdOrder.length - i; // #1 = newest
+
+        // Format date as "jul27_2025"
+        const dateLabel = (() => {
+          if (!media.date) return "unknown";
+          const d = new Date(media.date);
+          const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+          return `${months[d.getMonth()]}${d.getDate()}_${d.getFullYear()}`;
+        })();
 
         if (media) {
           const status = media.status || (media.needsClick ? "needs-load" : "ready");
@@ -945,11 +959,10 @@
             <div style="padding: 0.5rem; margin-bottom: 0.25rem; background: ${bgColor}; border-radius: 4px; ${isCurrent ? 'border: 2px solid #2196f3;' : ''} user-select: text;">
               <div style="user-select: text;">
                 <span style="color: ${statusColor}; user-select: text;">${statusIcon}</span>
-                <strong style="user-select: text;"> #${position} - ${media.filename || media.type.toUpperCase()}</strong>
+                <strong style="user-select: text;"> ${dateLabel} - ${media.filename || media.type.toUpperCase()}</strong>
                 ${isCurrent ? '<span style="color: #2196f3; user-select: text;"> ◀ CURRENT</span>' : ''}
               </div>
               <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">Type: ${media.type.toUpperCase()}</div>
-              <div style="font-size: 0.85rem; color: #888; user-select: text;">Date: ${formatDate(media.date)}</div>
             </div>
           `;
         }
@@ -1084,6 +1097,9 @@
     startBtn.style.display = "none";
     pauseBtn.style.display = "block";
 
+    const rescanBtn = document.getElementById("tel-rescan-continue");
+    if (rescanBtn) rescanBtn.style.display = "none"; // Hide Resume when downloading
+
     logger.info(`✓ Starting from newest video, will download backwards`);
     logger.info(`🔄 Queue will expand dynamically as Telegram loads older messages`);
 
@@ -1134,6 +1150,9 @@
         startBtn.disabled = true;
       }
       if (pauseBtn) pauseBtn.style.display = "none";
+
+      const rescanBtn = document.getElementById("tel-rescan-continue");
+      if (rescanBtn) rescanBtn.style.display = "block"; // Show Resume when done
 
       // Scroll to bottom to prevent last video from auto-playing
       const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
@@ -1206,6 +1225,9 @@
           startBtn.disabled = true;
         }
         if (pauseBtn) pauseBtn.style.display = "none";
+
+        const rescanBtn = document.getElementById("tel-rescan-continue");
+        if (rescanBtn) rescanBtn.style.display = "block"; // Show Resume when done
 
         // Scroll to top to prevent last video from auto-playing
         const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
@@ -1524,7 +1546,8 @@
           date: getMessageDate(bubble),
           selector: `[data-mid="${msgId}"]`,
           status: null,
-          filename: generateFileName(videoUrl, 'video')
+          filename: generateFileName(videoUrl, 'video'),
+          displayNumber: nextDisplayNumber++  // Assign permanent number
         });
         mediaIdOrder.push(msgId);
         newCount++;
@@ -1546,7 +1569,8 @@
             date: getMessageDate(bubble),
             selector: `[data-mid="${msgId}"]`,
             status: null,
-            filename: generateFileName(img.src, 'image')
+            filename: generateFileName(img.src, 'image'),
+            displayNumber: nextDisplayNumber++
           });
           mediaIdOrder.push(msgId);
           newCount++;
@@ -1567,7 +1591,8 @@
             date: getMessageDate(bubble),
             selector: `[data-mid="${msgId}"]`,
             status: null,
-            filename: generateFileName(audioUrl, 'audio')
+            filename: generateFileName(audioUrl, 'audio'),
+            displayNumber: nextDisplayNumber++
           });
           mediaIdOrder.push(msgId);
           newCount++;
@@ -1605,7 +1630,8 @@
           date: getMessageDate(msg),
           selector: `[data-message-id="${msgId}"]`,
           status: null,
-          filename: generateFileName(videoUrl, 'video')
+          filename: generateFileName(videoUrl, 'video'),
+          displayNumber: nextDisplayNumber++
         });
         mediaIdOrder.push(msgId);
         newCount++;
@@ -1618,7 +1644,8 @@
           date: getMessageDate(msg),
           selector: `[data-message-id="${msgId}"]`,
           status: null,
-          filename: generateFileName(img.src, 'image')
+          filename: generateFileName(img.src, 'image'),
+          displayNumber: nextDisplayNumber++
         });
         mediaIdOrder.push(msgId);
         newCount++;
