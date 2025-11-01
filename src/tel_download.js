@@ -896,7 +896,49 @@
       html += `</div></div>`;
     }
 
+    // Add button to open downloads folder
+    html += `
+      <div style="margin-top: 1.5rem; user-select: text;">
+        <button id="tel-open-downloads" style="
+          width: 100%;
+          padding: 0.75rem;
+          background: #4caf50;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          font-size: 1rem;
+          font-weight: bold;
+          cursor: pointer;
+          user-select: none;
+          transition: background 0.2s;
+        " onmouseover="this.style.background='#45a049'" onmouseout="this.style.background='#4caf50'">
+          📁 Open Downloads Folder
+        </button>
+      </div>
+    `;
+
     statusArea.innerHTML = html;
+
+    // Attach event listener to downloads button
+    const downloadsBtn = document.getElementById("tel-open-downloads");
+    if (downloadsBtn) {
+      downloadsBtn.onclick = () => {
+        // Detect browser and open appropriate downloads page
+        const isChrome = navigator.userAgent.includes("Chrome");
+        const isEdge = navigator.userAgent.includes("Edg");
+        const isFirefox = navigator.userAgent.includes("Firefox");
+
+        let downloadsUrl = "chrome://downloads/";
+        if (isEdge) {
+          downloadsUrl = "edge://downloads/";
+        } else if (isFirefox) {
+          downloadsUrl = "about:downloads";
+        }
+
+        window.open(downloadsUrl, "_blank");
+        logger.info(`Opening downloads page: ${downloadsUrl}`);
+      };
+    }
   };
 
   // ===== SMART AUTO-LOADING ENGINE =====
