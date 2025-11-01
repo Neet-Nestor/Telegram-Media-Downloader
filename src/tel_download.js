@@ -838,8 +838,8 @@
         const position = mediaIdOrder.indexOf(mediaId) + 1;
         html += `
           <div style="padding: 0.5rem; margin-bottom: 0.5rem; background: rgba(244,67,54,0.1); border-left: 3px solid #f44336; border-radius: 4px; user-select: text;">
-            <div style="user-select: text;"><strong style="user-select: text;">✗ #${position} - ${media.type.toUpperCase()}</strong></div>
-            <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">ID: ${mediaId}</div>
+            <div style="user-select: text;"><strong style="user-select: text;">✗ #${position} - ${media.filename || media.type.toUpperCase()}</strong></div>
+            <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">Type: ${media.type.toUpperCase()}</div>
             <div style="font-size: 0.85rem; color: #888; user-select: text;">Date: ${formatDate(media.date)}</div>
           </div>
         `;
@@ -883,10 +883,10 @@
             <div style="padding: 0.5rem; margin-bottom: 0.25rem; background: ${bgColor}; border-radius: 4px; ${isCurrent ? 'border: 2px solid #2196f3;' : ''} user-select: text;">
               <div style="user-select: text;">
                 <span style="color: ${statusColor}; user-select: text;">${statusIcon}</span>
-                <strong style="user-select: text;"> #${position} - ${media.type.toUpperCase()}</strong>
+                <strong style="user-select: text;"> #${position} - ${media.filename || media.type.toUpperCase()}</strong>
                 ${isCurrent ? '<span style="color: #2196f3; user-select: text;"> ◀ CURRENT</span>' : ''}
               </div>
-              <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">ID: ${mediaId}</div>
+              <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">Type: ${media.type.toUpperCase()}</div>
               <div style="font-size: 0.85rem; color: #888; user-select: text;">Date: ${formatDate(media.date)}</div>
             </div>
           `;
@@ -968,6 +968,7 @@
               if (videoUrl) {
                 media.url = videoUrl;
                 media.needsClick = false;
+                media.filename = generateFileName(videoUrl, 'video');
                 logger.info(`✓ Auto-loaded video URL for ${msgId}`);
                 updateSidebarStatus();
               }
@@ -1113,6 +1114,7 @@
       if (videoUrl) {
         media.url = videoUrl;
         media.needsClick = false;
+        media.filename = generateFileName(videoUrl, 'video');
         logger.info(`✓ Successfully loaded URL for ${mediaId}`);
       } else {
         logger.error(`Failed to auto-load video ${mediaId}`);
@@ -1204,6 +1206,42 @@
     const contentHash = hashCode(timestamp + textContent);
 
     return `msg_${contentHash}`;
+  };
+
+  const generateFileName = (url, type) => {
+    if (!url) return `pending.${type === 'audio' ? 'ogg' : type === 'image' ? 'jpeg' : 'mp4'}`;
+
+    // For videos, try to extract filename from metadata
+    if (type === 'video') {
+      try {
+        const metadata = JSON.parse(
+          decodeURIComponent(url.split("/")[url.split("/").length - 1])
+        );
+        if (metadata.fileName) {
+          return metadata.fileName;
+        }
+      } catch (e) {
+        // Not JSON metadata, use hash
+      }
+      return hashCode(url).toString(36) + ".mp4";
+    }
+
+    // For audio
+    if (type === 'audio') {
+      return hashCode(url).toString(36) + ".ogg";
+    }
+
+    // For images
+    if (type === 'image') {
+      // Try to extract extension from URL
+      const urlParts = url.split('.');
+      const ext = urlParts[urlParts.length - 1].split('?')[0].toLowerCase();
+      const validExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+      const extension = validExts.includes(ext) ? ext : 'jpeg';
+      return hashCode(url).toString(36) + "." + extension;
+    }
+
+    return hashCode(url).toString(36);
   };
 
   const getMessageDate = (element) => {
@@ -1361,7 +1399,8 @@
           needsClick: !videoUrl,
           date: getMessageDate(bubble),
           selector: `[data-mid="${msgId}"]`,
-          status: null
+          status: null,
+          filename: generateFileName(videoUrl, 'video')
         });
         mediaIdOrder.push(msgId);
         newCount++;
@@ -1382,7 +1421,8 @@
             needsClick: false,
             date: getMessageDate(bubble),
             selector: `[data-mid="${msgId}"]`,
-            status: null
+            status: null,
+            filename: generateFileName(img.src, 'image')
           });
           mediaIdOrder.push(msgId);
           newCount++;
@@ -1402,7 +1442,8 @@
             needsClick: false,
             date: getMessageDate(bubble),
             selector: `[data-mid="${msgId}"]`,
-            status: null
+            status: null,
+            filename: generateFileName(audioUrl, 'audio')
           });
           mediaIdOrder.push(msgId);
           newCount++;
@@ -1439,7 +1480,8 @@
           needsClick: !videoUrl,
           date: getMessageDate(msg),
           selector: `[data-message-id="${msgId}"]`,
-          status: null
+          status: null,
+          filename: generateFileName(videoUrl, 'video')
         });
         mediaIdOrder.push(msgId);
         newCount++;
@@ -1451,7 +1493,8 @@
           needsClick: false,
           date: getMessageDate(msg),
           selector: `[data-message-id="${msgId}"]`,
-          status: null
+          status: null,
+          filename: generateFileName(img.src, 'image')
         });
         mediaIdOrder.push(msgId);
         newCount++;
