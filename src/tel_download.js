@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      4.0-fork
+// @version      5.3.0-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -713,6 +713,24 @@
     rescanBtn.onmouseout = () => rescanBtn.style.background = "#9c27b0";
     rescanBtn.onclick = () => rescanAndResume();
 
+    const copyStatusBtn = document.createElement("button");
+    copyStatusBtn.id = "tel-copy-status";
+    copyStatusBtn.innerHTML = "📋 Copy Full Status";
+    copyStatusBtn.style.cssText = `
+      padding: 0.75rem;
+      background: #607d8b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.2s;
+    `;
+    copyStatusBtn.onmouseover = () => copyStatusBtn.style.background = "#455a64";
+    copyStatusBtn.onmouseout = () => copyStatusBtn.style.background = "#607d8b";
+    copyStatusBtn.onclick = () => copyFullStatusToClipboard();
+
     const downloadsBtn = document.createElement("button");
     downloadsBtn.id = "tel-open-downloads-static";
     downloadsBtn.innerHTML = "📁 Open Downloads Folder";
@@ -764,6 +782,7 @@
     buttonArea.appendChild(startAutoBtn);
     buttonArea.appendChild(pauseBtn);
     buttonArea.appendChild(rescanBtn);
+    buttonArea.appendChild(copyStatusBtn);
     buttonArea.appendChild(downloadsBtn);
     buttonArea.appendChild(closeBtn);
 
@@ -1052,6 +1071,171 @@
       }
     } else {
       logger.info("Already downloading, new items added to queue");
+    }
+  };
+
+  const copyFullStatusToClipboard = async () => {
+    logger.info("📋 Generating comprehensive status report...");
+
+    // Build categorized lists
+    const successful = [];
+    const failed = [];
+    const pending = [];
+    const needsUrl = [];
+    const inQueue = [];
+
+    for (const [messageId, media] of mediaMap) {
+      const dateLabel = (() => {
+        if (!media.date) return "unknown";
+        const d = new Date(media.date);
+        const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        return `${months[d.getMonth()]}${d.getDate()}_${d.getFullYear()}`;
+      })();
+
+      const item = {
+        messageId,
+        dateLabel,
+        date: media.date ? new Date(media.date).toISOString() : null,
+        filename: media.filename || media.type.toUpperCase(),
+        type: media.type,
+        status: media.status,
+        hasUrl: !!media.url,
+        needsClick: media.needsClick
+      };
+
+      switch (media.status) {
+        case 'success':
+          successful.push(item);
+          break;
+        case 'failed':
+          failed.push(item);
+          break;
+        case 'downloading':
+          inQueue.push(item);
+          break;
+        default:
+          if (media.needsClick || !media.url) {
+            needsUrl.push(item);
+          } else {
+            pending.push(item);
+          }
+      }
+    }
+
+    // Generate comprehensive JSON report
+    const statusReport = {
+      metadata: {
+        scriptVersion: GM_info.script.version,
+        exportTime: new Date().toISOString(),
+        browser: navigator.userAgent,
+        telegramUrl: window.location.href
+      },
+      systemState: {
+        isAutoDownloading,
+        autoDownloadPaused,
+        downloadInProgress,
+        bulkDownloadActive: bulkDownloadState.active,
+        currentDownloadIndex: bulkDownloadState.currentIndex,
+        consecutiveNoNewVideos
+      },
+      configuration: {
+        SCROLL_ANIMATION_DELAY: CONFIG.SCROLL_ANIMATION_DELAY,
+        DOWNLOAD_DELAY: CONFIG.DOWNLOAD_DELAY,
+        VIDEO_LOAD_TIMEOUT: CONFIG.VIDEO_LOAD_TIMEOUT,
+        SAME_COUNT_THRESHOLD: CONFIG.SAME_COUNT_THRESHOLD,
+        SCROLL_INCREMENT: CONFIG.SCROLL_INCREMENT
+      },
+      summary: {
+        totalVideosFound: mediaMap.size,
+        totalInQueue: mediaIdOrder.length,
+        successful: successful.length,
+        failed: failed.length,
+        pending: pending.length,
+        needsUrlLoad: needsUrl.length,
+        currentlyDownloading: inQueue.length
+      },
+      downloads: {
+        successful: successful.map(item => ({
+          dateLabel: item.dateLabel,
+          filename: item.filename,
+          date: item.date
+        })),
+        failed: failed.map(item => ({
+          dateLabel: item.dateLabel,
+          filename: item.filename,
+          date: item.date,
+          messageId: item.messageId
+        })),
+        needsUrlLoad: needsUrl.map(item => ({
+          dateLabel: item.dateLabel,
+          filename: item.filename,
+          date: item.date,
+          messageId: item.messageId,
+          needsClick: item.needsClick
+        })),
+        pending: pending.map(item => ({
+          dateLabel: item.dateLabel,
+          filename: item.filename,
+          date: item.date
+        }))
+      },
+      debugInfo: {
+        queueOrder: mediaIdOrder.map(id => {
+          const media = mediaMap.get(id);
+          if (!media) return null;
+          const dateLabel = (() => {
+            if (!media.date) return "unknown";
+            const d = new Date(media.date);
+            const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+            return `${months[d.getMonth()]}${d.getDate()}_${d.getFullYear()}`;
+          })();
+          return {
+            messageId: id,
+            dateLabel,
+            filename: media.filename,
+            status: media.status,
+            hasUrl: !!media.url
+          };
+        }).filter(Boolean),
+        totalDomMessages: document.querySelectorAll('.message').length,
+        hasScrollContainer: !!document.querySelector("#column-center .scrollable-y")
+      }
+    };
+
+    try {
+      const jsonString = JSON.stringify(statusReport, null, 2);
+
+      await navigator.clipboard.writeText(jsonString);
+
+      logger.info("✓ Full status copied to clipboard!");
+
+      // Show temporary toast notification
+      const toast = document.createElement("div");
+      toast.textContent = "✓ Status copied to clipboard!";
+      toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4caf50;
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 1rem;
+        z-index: 999999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        animation: slideIn 0.3s ease-out;
+      `;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.animation = "fadeOut 0.3s ease-out";
+        setTimeout(() => toast.remove(), 300);
+      }, 2000);
+
+    } catch (err) {
+      logger.error("Failed to copy status to clipboard:", err);
+      alert("Failed to copy status. Check console for details.");
     }
   };
 
