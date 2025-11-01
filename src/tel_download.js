@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      5.3.0-fork
+// @version      5.3.1-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -1840,6 +1840,18 @@
       logger.info(`Found ${newCount} new media items. Total: ${mediaMap.size}`);
       cleanupOldMedia();
     }
+
+    // Sort mediaIdOrder by date (oldest → newest) to ensure correct display order
+    mediaIdOrder.sort((a, b) => {
+      const mediaA = mediaMap.get(a);
+      const mediaB = mediaMap.get(b);
+      if (!mediaA || !mediaB) return 0;
+
+      const dateA = mediaA.date ? new Date(mediaA.date).getTime() : 0;
+      const dateB = mediaB.date ? new Date(mediaB.date).getTime() : 0;
+
+      return dateA - dateB; // Ascending order (oldest first)
+    });
 
     return mediaMap.size;
   };
