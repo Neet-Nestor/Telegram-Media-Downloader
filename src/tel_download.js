@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      5.3.2-fork
+// @version      5.4.0-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -941,7 +941,7 @@
       html += `
         <div style="margin-top: 1.5rem; user-select: text;">
           <h3 style="margin: 0 0 0.5rem 0; user-select: text;">Queue (${total} items)</h3>
-          <div style="max-height: 400px; overflow-y: auto; border: 1px solid #888; border-radius: 4px; padding: 0.5rem; user-select: text;">
+          <div id="tel-queue-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #888; border-radius: 4px; padding: 0.5rem; user-select: text;">
       `;
 
       // Show all items in order (newest first)
@@ -975,7 +975,7 @@
           const bgColor = isCurrent ? "rgba(33,150,243,0.2)" : "rgba(128,128,128,0.1)";
 
           html += `
-            <div style="padding: 0.5rem; margin-bottom: 0.25rem; background: ${bgColor}; border-radius: 4px; ${isCurrent ? 'border: 2px solid #2196f3;' : ''} user-select: text;">
+            <div id="queue-item-${i}" style="padding: 0.5rem; margin-bottom: 0.25rem; background: ${bgColor}; border-radius: 4px; ${isCurrent ? 'border: 2px solid #2196f3;' : ''} user-select: text;">
               <div style="user-select: text;">
                 <span style="color: ${statusColor}; user-select: text;">${statusIcon}</span>
                 <strong style="user-select: text;"> ${dateLabel} - ${media.filename || media.type.toUpperCase()}</strong>
@@ -990,7 +990,27 @@
       html += `</div></div>`;
     }
 
+    // Save scroll position before updating
+    const queueContainer = document.getElementById("tel-queue-container");
+    const previousScrollTop = queueContainer ? queueContainer.scrollTop : 0;
+
     statusArea.innerHTML = html;
+
+    // Auto-scroll to current item if downloading
+    if (isAutoDownloading && currentIndex >= 0) {
+      setTimeout(() => {
+        const currentItem = document.getElementById(`queue-item-${currentIndex}`);
+        if (currentItem) {
+          currentItem.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
+    } else if (queueContainer) {
+      // Restore scroll position if not downloading
+      const newQueueContainer = document.getElementById("tel-queue-container");
+      if (newQueueContainer) {
+        newQueueContainer.scrollTop = previousScrollTop;
+      }
+    }
   };
 
   // ===== SMART AUTO-LOADING ENGINE =====
@@ -1061,11 +1081,44 @@
 
     updateSidebarStatus();
 
-    // If not currently downloading, start from the newest found item
+    // If not currently downloading, resume from last incomplete video
     if (!isAutoDownloading) {
       if (mediaIdOrder.length > 0) {
-        logger.info("Starting download from newest video...");
-        startAutoDownload();
+        // Find the first non-completed video (scanning backwards from newest)
+        let resumeIndex = -1;
+        for (let i = mediaIdOrder.length - 1; i >= 0; i--) {
+          const media = mediaMap.get(mediaIdOrder[i]);
+          if (media && media.status !== "completed") {
+            resumeIndex = i;
+            break;
+          }
+        }
+
+        if (resumeIndex >= 0) {
+          logger.info(`Resuming from index ${resumeIndex} (first non-completed video)`);
+
+          // Manually set state instead of calling startAutoDownload()
+          isAutoDownloading = true;
+          autoDownloadPaused = false;
+          bulkDownloadState.active = true;
+          bulkDownloadState.currentIndex = resumeIndex; // Resume from last incomplete
+          consecutiveNoNewVideos = 0;
+
+          const startBtn = document.getElementById("tel-start-auto-download");
+          const pauseBtn = document.getElementById("tel-pause-download");
+          const rescanBtn = document.getElementById("tel-rescan-continue");
+
+          if (startBtn) startBtn.style.display = "none";
+          if (pauseBtn) pauseBtn.style.display = "block";
+          if (rescanBtn) rescanBtn.style.display = "none";
+
+          setupIntersectionObserver();
+          updateSidebarStatus();
+          processDownloadQueue();
+        } else {
+          logger.info("All videos already completed!");
+          alert("All videos have already been downloaded!");
+        }
       } else {
         alert("No media found! Scroll through the chat to load some videos first.");
       }
@@ -1355,6 +1408,16 @@
 
     if (!media) {
       logger.error(`Media not found: ${mediaId}`);
+      bulkDownloadState.skipped++;
+      bulkDownloadState.currentIndex--;
+      updateSidebarStatus();
+      setTimeout(() => processDownloadQueue(), 100);
+      return;
+    }
+
+    // Skip already-completed videos
+    if (media.status === "completed") {
+      logger.info(`⏭ Skipping already-completed video: ${media.filename || mediaId}`);
       bulkDownloadState.skipped++;
       bulkDownloadState.currentIndex--;
       updateSidebarStatus();
@@ -1843,16 +1906,19 @@
     }
 
     // Sort mediaIdOrder by date (oldest → newest) to ensure correct display order
-    mediaIdOrder.sort((a, b) => {
-      const mediaA = mediaMap.get(a);
-      const mediaB = mediaMap.get(b);
-      if (!mediaA || !mediaB) return 0;
+    // CRITICAL: Only sort if NOT currently downloading, otherwise indices shift mid-download!
+    if (!isAutoDownloading) {
+      mediaIdOrder.sort((a, b) => {
+        const mediaA = mediaMap.get(a);
+        const mediaB = mediaMap.get(b);
+        if (!mediaA || !mediaB) return 0;
 
-      const dateA = mediaA.date ? new Date(mediaA.date).getTime() : 0;
-      const dateB = mediaB.date ? new Date(mediaB.date).getTime() : 0;
+        const dateA = mediaA.date ? new Date(mediaA.date).getTime() : 0;
+        const dateB = mediaB.date ? new Date(mediaB.date).getTime() : 0;
 
-      return dateA - dateB; // Ascending order (oldest first)
-    });
+        return dateA - dateB; // Ascending order (oldest first)
+      });
+    }
 
     return mediaMap.size;
   };
