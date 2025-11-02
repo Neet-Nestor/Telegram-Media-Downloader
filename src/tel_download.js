@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      5.4.0-fork
+// @version      5.5.0-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -1445,47 +1445,25 @@
     await new Promise(resolve => setTimeout(resolve, CONFIG.SCROLL_ANIMATION_DELAY));
 
     // After scrolling, detect any NEW videos that appeared (Telegram's pagination loads more)
-    const previousCount = mediaIdOrder.length;
-    findMediaMessages();
-    const newCount = mediaIdOrder.length;
+    // But only scan if we haven't reached the top of chat yet
+    if (consecutiveNoNewVideos < CONFIG.SAME_COUNT_THRESHOLD) {
+      const previousCount = mediaIdOrder.length;
+      findMediaMessages();
+      const newCount = mediaIdOrder.length;
 
-    if (newCount > previousCount) {
-      const newVideosFound = newCount - previousCount;
-      logger.info(`🔍 Found ${newVideosFound} new videos while scrolling (total now: ${newCount})`);
-      consecutiveNoNewVideos = 0; // Reset counter when we find new videos
-      updateSidebarStatus();
-    } else {
-      consecutiveNoNewVideos++;
-      logger.info(`No new videos found (${consecutiveNoNewVideos} consecutive scans)`);
-
-      // Stop if we haven't found new videos in 10 consecutive scrolls (reached top of chat)
-      if (consecutiveNoNewVideos >= 10) {
-        logger.info("🏁 Reached top of chat - no more videos found after 10 consecutive scans");
-        logger.info(`✓ Downloaded ${bulkDownloadState.downloaded} videos, ${bulkDownloadState.failed} failed`);
-
-        isAutoDownloading = false;
-        const startBtn = document.getElementById("tel-start-auto-download");
-        const pauseBtn = document.getElementById("tel-pause-download");
-
-        if (startBtn) {
-          startBtn.textContent = "All Done!";
-          startBtn.style.background = "#4caf50";
-          startBtn.disabled = true;
-        }
-        if (pauseBtn) pauseBtn.style.display = "none";
-
-        const rescanBtn = document.getElementById("tel-rescan-continue");
-        if (rescanBtn) rescanBtn.style.display = "block"; // Show Resume when done
-
-        // Scroll to top to prevent last video from auto-playing
-        const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
-                               document.querySelector(".bubbles-inner");
-        if (scrollContainer) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight; // Scroll to bottom (newest messages)
-        }
-
+      if (newCount > previousCount) {
+        const newVideosFound = newCount - previousCount;
+        logger.info(`🔍 Found ${newVideosFound} new videos while scrolling (total now: ${newCount})`);
+        consecutiveNoNewVideos = 0; // Reset counter when we find new videos
         updateSidebarStatus();
-        return;
+      } else {
+        consecutiveNoNewVideos++;
+        logger.info(`No new videos found (${consecutiveNoNewVideos} consecutive scans)`);
+
+        if (consecutiveNoNewVideos >= CONFIG.SAME_COUNT_THRESHOLD) {
+          logger.info("🏁 Reached top of chat - no more new videos available");
+          logger.info("Will continue downloading remaining queue items...");
+        }
       }
     }
 
