@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      5.5.0-fork
+// @version      5.5.1-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -875,8 +875,20 @@
 
     const { currentIndex, downloaded, skipped, failed } = bulkDownloadState;
     const total = mediaIdOrder.length;
-    const needsLoading = Array.from(mediaMap.values()).filter(m => m.needsClick).length;
-    const loaded = Array.from(mediaMap.values()).filter(m => !m.needsClick && m.type === "video").length;
+
+    // Count videos by status for live updates
+    const needsLoading = Array.from(mediaMap.values()).filter(m =>
+      m.needsClick &&
+      m.status !== "completed" &&
+      m.status !== "failed"
+    ).length;
+
+    const loaded = Array.from(mediaMap.values()).filter(m =>
+      !m.needsClick &&
+      m.type === "video" &&
+      m.status !== "completed" &&
+      m.status !== "failed"
+    ).length;
 
     const formatDate = (timestamp) => {
       if (!timestamp) return "Unknown date";
