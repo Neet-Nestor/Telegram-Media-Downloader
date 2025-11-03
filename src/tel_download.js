@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      6.0.0-fork
+// @version      6.0.1-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -43,12 +43,12 @@
   const CONFIG = {
     REFRESH_DELAY: 500,
     VIDEO_LOAD_TIMEOUT: 1000,
-    SCROLL_ANIMATION_DELAY: 1200, // Increased from 500 to give Telegram time to load
+    SCROLL_ANIMATION_DELAY: 1500, // Increased from 500 to give Telegram time to load
     DOWNLOAD_DELAY: 300,
     HIGHLIGHT_DURATION: 1500,
     SCROLL_INCREMENT: 800,
     SCROLL_WAIT_TIME: 1500,
-    SAME_COUNT_THRESHOLD: 10,
+    SAME_COUNT_THRESHOLD: 15,
     SCROLL_BOTTOM_THRESHOLD: 100,
     MAX_MEDIA_ITEMS: 10000,
     CLEANUP_THRESHOLD: 0.8,
@@ -1321,9 +1321,9 @@
     startBtn.style.background = "#999";
 
     // NEW APPROACH: Batch processing
-    // Download videos as we find them, then scroll to find more
+    // Start from NEWEST (bottom), download, scroll UP to OLDEST (top)
     logger.info("🚀 Starting batch download mode");
-    logger.info("Will download current view → scroll up → find more → repeat");
+    logger.info("Scrolling to NEWEST messages first, then will scroll UP to find all videos");
 
     isAutoDownloading = true;
     autoDownloadPaused = false;
@@ -1344,8 +1344,23 @@
 
     updateSidebarStatus();
 
-    // Start batch processing
-    processDownloadQueue();
+    // Step 1: Scroll to BOTTOM (newest messages) first
+    const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
+                           document.querySelector(".bubbles-inner");
+
+    if (scrollContainer) {
+      logger.info("Scrolling to bottom (newest messages)...");
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+
+      // Wait for Telegram to settle
+      setTimeout(() => {
+        logger.info("Starting batch processing from newest → oldest");
+        processDownloadQueue();
+      }, 1000);
+    } else {
+      logger.error("Scroll container not found!");
+      processDownloadQueue();
+    }
   };
 
   const togglePauseDownload = () => {
@@ -1426,9 +1441,15 @@
 
     oldestBubble.scrollIntoView({ behavior: "smooth", block: "start" });
 
-    // Scroll UP an additional 500px to aggressively trigger pagination
+    // Scroll UP an additional 1000px to aggressively trigger pagination
     await new Promise(resolve => setTimeout(resolve, 500));
-    scrollContainer.scrollTop -= 500;
+    scrollContainer.scrollTop -= 1000;
+
+    // If we're very close to top, try scrolling to absolute top
+    if (scrollContainer.scrollTop < 2000) {
+      logger.info("Near top of scroll, scrolling to absolute top...");
+      scrollContainer.scrollTop = 0;
+    }
 
     // Step 4: Wait for Telegram to load older messages
     await new Promise(resolve => setTimeout(resolve, CONFIG.SCROLL_ANIMATION_DELAY));
