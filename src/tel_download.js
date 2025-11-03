@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      6.0.1-fork
+// @version      6.0.2-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -1165,7 +1165,8 @@
         type: media.type,
         status: media.status,
         hasUrl: !!media.url,
-        needsClick: media.needsClick
+        needsClick: media.needsClick,
+        failureReason: media.failureReason || null
       };
 
       switch (media.status) {
@@ -1230,7 +1231,8 @@
           dateLabel: item.dateLabel,
           filename: item.filename,
           date: item.date,
-          messageId: item.messageId
+          messageId: item.messageId,
+          failureReason: item.failureReason
         })),
         needsUrlLoad: needsUrl.map(item => ({
           dateLabel: item.dateLabel,
@@ -1260,7 +1262,8 @@
             dateLabel,
             filename: media.filename,
             status: media.status,
-            hasUrl: !!media.url
+            hasUrl: !!media.url,
+            failureReason: media.failureReason || null
           };
         }).filter(Boolean),
         totalDomMessages: document.querySelectorAll('.message').length,
@@ -1491,6 +1494,7 @@
     if (!element) {
       logger.error(`❌ Element not found for ${mediaId} - ${media.filename}`);
       media.status = "failed";
+      media.failureReason = "Element not found in DOM";
       bulkDownloadState.failed++;
       return;
     }
@@ -1507,6 +1511,7 @@
       } else {
         logger.error(`❌ Failed to load URL for ${mediaId}`);
         media.status = "failed";
+        media.failureReason = "URL load failed (triggerVideoLoad returned null)";
         bulkDownloadState.failed++;
         return;
       }
@@ -1516,6 +1521,7 @@
     if (!media.url) {
       logger.error(`❌ No URL for ${mediaId} - ${media.filename}`);
       media.status = "failed";
+      media.failureReason = "No URL available";
       bulkDownloadState.failed++;
       return;
     }
@@ -1547,6 +1553,7 @@
     } catch (error) {
       logger.error(`❌ Download FAILED for ${mediaId}: ${error}`);
       media.status = "failed";
+      media.failureReason = `Download function error: ${error.message || error}`;
       bulkDownloadState.failed++;
     }
   };
