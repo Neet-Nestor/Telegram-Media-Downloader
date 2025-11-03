@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器
 // @name:zh-TW   Telegram 受限圖片影片下載器
 // @name:ru      Telegram: загрузчик медиафайлов
-// @version      1.208
+// @version      1.21
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Enhanced downloader for images, GIFs, videos, and voice messages with better UX, performance optimizations, and advanced features
 // @description:en Enhanced downloader for images, GIFs, videos, and voice messages with better UX, performance optimizations, and advanced features
