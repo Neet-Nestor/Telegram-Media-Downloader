@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      5.6.0-fork
+// @version      6.0.0-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -1320,43 +1320,31 @@
     startBtn.textContent = "Starting...";
     startBtn.style.background = "#999";
 
-    // Step 1: Find ONLY currently visible media (no pre-scan)
-    logger.info("🔍 Scanning currently visible media...");
-    const initialCount = findMediaMessages();
-    logger.info(`Found ${initialCount} visible media items`);
+    // NEW APPROACH: Batch processing
+    // Download videos as we find them, then scroll to find more
+    logger.info("🚀 Starting batch download mode");
+    logger.info("Will download current view → scroll up → find more → repeat");
 
-    if (initialCount === 0) {
-      alert("No media found! Please scroll through the chat to load some videos first.");
-      startBtn.disabled = false;
-      startBtn.textContent = "Start Auto-Download";
-      startBtn.style.background = "#4caf50";
-      return;
-    }
-
-    // Step 2: Setup auto-loader for lazy-loading video URLs
-    setupIntersectionObserver();
-
-    // Step 3: Start sequential download (from oldest to newest)
-    // NOTE: Queue will grow dynamically as we scroll and Telegram loads more messages
-    // Downloading oldest→newest is more robust: new videos append to end, we naturally reach them
     isAutoDownloading = true;
     autoDownloadPaused = false;
     bulkDownloadState.active = true;
-    bulkDownloadState.currentIndex = 0; // Start from oldest (beginning of array)
-    consecutiveNoNewVideos = 0; // Reset counter for new session
+    bulkDownloadState.downloaded = 0;
+    bulkDownloadState.failed = 0;
+    bulkDownloadState.skipped = 0;
+    consecutiveNoNewVideos = 0;
 
     startBtn.style.display = "none";
     pauseBtn.style.display = "block";
 
     const rescanBtn = document.getElementById("tel-rescan-continue");
-    if (rescanBtn) rescanBtn.style.display = "none"; // Hide Resume when downloading
+    if (rescanBtn) rescanBtn.style.display = "none";
 
-    logger.info(`✓ Starting from oldest video, will download forwards`);
-    logger.info(`🔄 Queue will expand dynamically as Telegram loads more messages`);
+    // Setup auto-loader for lazy-loading video URLs
+    setupIntersectionObserver();
 
     updateSidebarStatus();
 
-    // Step 4: Process queue (scans on-the-go as it downloads)
+    // Start batch processing
     processDownloadQueue();
   };
 
@@ -1377,7 +1365,9 @@
     }
   };
 
-  // ===== INTELLIGENT QUEUE PROCESSOR =====
+  // ===== BATCH DOWNLOAD PROCESSOR (NEW APPROACH) =====
+  // Download videos IMMEDIATELY as they're found, then scroll to find more
+  // This ensures DOM elements exist when we download them
 
   const processDownloadQueue = async () => {
     if (!isAutoDownloading || autoDownloadPaused) {
@@ -1385,140 +1375,135 @@
       return;
     }
 
-    const { currentIndex } = bulkDownloadState;
+    logger.info("🔄 Starting batch processing cycle...");
 
-    if (currentIndex >= mediaIdOrder.length) {
-      logger.info("✓ All downloads completed!");
-      logger.info(`Downloaded ${bulkDownloadState.downloaded} videos, ${bulkDownloadState.failed} failed`);
-      isAutoDownloading = false;
+    // Step 1: Find videos in CURRENT DOM view only
+    const videosInCurrentView = findMediaMessages();
+    logger.info(`Found ${videosInCurrentView} videos in current view (total tracked: ${mediaMap.size})`);
 
-      const startBtn = document.getElementById("tel-start-auto-download");
-      const pauseBtn = document.getElementById("tel-pause-download");
+    // Step 2: Download ALL videos in current view that aren't already completed
+    const videosToDownload = Array.from(mediaMap.entries()).filter(([id, media]) =>
+      media.status !== "completed" && media.status !== "failed" && media.status !== "downloading"
+    );
 
-      if (startBtn) {
-        startBtn.textContent = "All Done!";
-        startBtn.style.background = "#4caf50";
-        startBtn.disabled = true;
-      }
-      if (pauseBtn) pauseBtn.style.display = "none";
+    logger.info(`Will attempt to download ${videosToDownload.length} new videos from current view`);
 
-      const rescanBtn = document.getElementById("tel-rescan-continue");
-      if (rescanBtn) rescanBtn.style.display = "block"; // Show Resume when done
-
-      // Scroll to bottom to prevent last video from auto-playing
-      const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
-                             document.querySelector(".bubbles-inner");
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight; // Scroll to newest messages
+    // Download each video IMMEDIATELY while its DOM element exists
+    for (const [mediaId, media] of videosToDownload) {
+      if (!isAutoDownloading || autoDownloadPaused) {
+        logger.info("Download paused by user");
+        return;
       }
 
-      updateSidebarStatus();
+      await downloadSingleVideo(mediaId, media);
+
+      // Small delay between downloads
+      await new Promise(resolve => setTimeout(resolve, CONFIG.DOWNLOAD_DELAY));
+    }
+
+    updateSidebarStatus();
+
+    // Step 3: Scroll UP to load older messages
+    const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
+                           document.querySelector(".bubbles-inner");
+
+    if (!scrollContainer) {
+      logger.error("Scroll container not found");
+      finishDownloading();
       return;
     }
 
-    const mediaId = mediaIdOrder[currentIndex];
-    const media = mediaMap.get(mediaId);
-
-    if (!media) {
-      logger.error(`Media not found: ${mediaId}`);
-      bulkDownloadState.skipped++;
-      bulkDownloadState.currentIndex++;
-      updateSidebarStatus();
-      setTimeout(() => processDownloadQueue(), 100);
+    // Find oldest message currently in DOM
+    const bubbles = document.querySelectorAll(".bubble:not(.is-date)");
+    if (bubbles.length === 0) {
+      logger.info("No messages found in DOM");
+      finishDownloading();
       return;
     }
 
-    // Skip already-completed videos
-    if (media.status === "completed") {
-      logger.info(`⏭ Skipping already-completed video: ${media.filename || mediaId}`);
-      bulkDownloadState.skipped++;
-      bulkDownloadState.currentIndex++;
-      updateSidebarStatus();
-      setTimeout(() => processDownloadQueue(), 100);
-      return;
-    }
+    const oldestBubble = bubbles[0]; // First bubble is oldest
+    logger.info(`Scrolling to oldest message to load more...`);
 
-    // Update status
+    oldestBubble.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // Scroll UP an additional 500px to aggressively trigger pagination
+    await new Promise(resolve => setTimeout(resolve, 500));
+    scrollContainer.scrollTop -= 500;
+
+    // Step 4: Wait for Telegram to load older messages
+    await new Promise(resolve => setTimeout(resolve, CONFIG.SCROLL_ANIMATION_DELAY));
+
+    // Step 5: Check if new videos appeared
+    const previousCount = mediaMap.size;
+    findMediaMessages();
+    const newCount = mediaMap.size;
+
+    if (newCount > previousCount) {
+      const newVideosFound = newCount - previousCount;
+      logger.info(`🔍 Found ${newVideosFound} NEW videos after scrolling! Continuing...`);
+      consecutiveNoNewVideos = 0;
+
+      // Continue processing - new videos found
+      setTimeout(() => processDownloadQueue(), 500);
+    } else {
+      consecutiveNoNewVideos++;
+      logger.info(`No new videos found (${consecutiveNoNewVideos}/${CONFIG.SAME_COUNT_THRESHOLD} attempts)`);
+
+      if (consecutiveNoNewVideos >= CONFIG.SAME_COUNT_THRESHOLD) {
+        logger.info("🏁 Reached top of chat - no more videos to find");
+        finishDownloading();
+      } else {
+        // Try scrolling more
+        setTimeout(() => processDownloadQueue(), 500);
+      }
+    }
+  };
+
+  // Helper: Download a single video
+  const downloadSingleVideo = async (mediaId, media) => {
     media.status = "downloading";
     updateSidebarStatus();
 
-    // Scroll to message
-    const element = scrollToMessage(mediaId);
+    // Find DOM element
+    const element = findMessageElement(mediaId);
 
     if (!element) {
-      logger.error(`Element not found for ${mediaId}`);
+      logger.error(`❌ Element not found for ${mediaId} - ${media.filename}`);
       media.status = "failed";
       bulkDownloadState.failed++;
-      bulkDownloadState.currentIndex++;
-      updateSidebarStatus();
-      setTimeout(() => processDownloadQueue(), 100);
       return;
     }
 
-    await new Promise(resolve => setTimeout(resolve, CONFIG.SCROLL_ANIMATION_DELAY));
-
-    // After scrolling, detect any NEW videos that appeared (Telegram's pagination loads more)
-    // But only scan if we haven't reached the top of chat yet
-    if (consecutiveNoNewVideos < CONFIG.SAME_COUNT_THRESHOLD) {
-      const previousCount = mediaIdOrder.length;
-      findMediaMessages();
-      const newCount = mediaIdOrder.length;
-
-      if (newCount > previousCount) {
-        const newVideosFound = newCount - previousCount;
-        logger.info(`🔍 Found ${newVideosFound} new videos while scrolling (total now: ${newCount})`);
-        consecutiveNoNewVideos = 0; // Reset counter when we find new videos
-        updateSidebarStatus();
-      } else {
-        consecutiveNoNewVideos++;
-        logger.info(`No new videos found (${consecutiveNoNewVideos} consecutive scans)`);
-
-        if (consecutiveNoNewVideos >= CONFIG.SAME_COUNT_THRESHOLD) {
-          logger.info("🏁 Reached top of chat - no more new videos available");
-          logger.info("Will continue downloading remaining queue items...");
-        }
-      }
-    }
-
-    // If video needs loading, try to load it
+    // Try to load URL if needed
     if (media.needsClick && media.type === "video") {
-      logger.info(`Video ${mediaId} needs URL loading...`);
-
+      logger.info(`Loading URL for ${media.filename}...`);
       const videoUrl = await triggerVideoLoad(element);
 
       if (videoUrl) {
         media.url = videoUrl;
         media.needsClick = false;
         media.filename = generateFileName(videoUrl, 'video');
-        logger.info(`✓ Successfully loaded URL for ${mediaId}`);
       } else {
-        logger.error(`Failed to auto-load video ${mediaId}`);
+        logger.error(`❌ Failed to load URL for ${mediaId}`);
         media.status = "failed";
         bulkDownloadState.failed++;
-        bulkDownloadState.currentIndex++;
-        updateSidebarStatus();
-        setTimeout(() => processDownloadQueue(), CONFIG.SEQUENTIAL_DOWNLOAD_DELAY);
         return;
       }
     }
 
-    // Check if URL is available
+    // Check URL
     if (!media.url) {
-      logger.error(`No URL for ${mediaId}`);
+      logger.error(`❌ No URL for ${mediaId} - ${media.filename}`);
       media.status = "failed";
       bulkDownloadState.failed++;
-      bulkDownloadState.currentIndex++;
-      updateSidebarStatus();
-      setTimeout(() => processDownloadQueue(), CONFIG.SEQUENTIAL_DOWNLOAD_DELAY);
       return;
     }
 
-    // Download based on type
+    // Download
     try {
-      logger.info(`🔽 Triggering download for ${media.type}: ${media.url.substring(0, 60)}...`);
+      logger.info(`⬇️ Downloading: ${media.filename}`);
 
       let downloadSuccess = false;
-
       switch (media.type) {
         case "video":
           downloadSuccess = tel_download_video(media.url);
@@ -1534,23 +1519,44 @@
       if (downloadSuccess !== false) {
         media.status = "completed";
         bulkDownloadState.downloaded++;
-        logger.info(`✓ Download triggered successfully for ${mediaId} (${bulkDownloadState.downloaded}/${mediaIdOrder.length})`);
-        logger.info(`Check your browser's download bar/folder`);
+        logger.info(`✅ Downloaded: ${media.filename} (${bulkDownloadState.downloaded} total)`);
       } else {
         throw new Error("Download function returned false");
       }
     } catch (error) {
       logger.error(`❌ Download FAILED for ${mediaId}: ${error}`);
-      logger.error(`URL was: ${media.url}`);
       media.status = "failed";
       bulkDownloadState.failed++;
     }
+  };
 
-    bulkDownloadState.currentIndex++;
+  // Helper: Finish downloading
+  const finishDownloading = () => {
+    logger.info("✓ All downloads completed!");
+    logger.info(`Downloaded ${bulkDownloadState.downloaded} videos, ${bulkDownloadState.failed} failed`);
+    isAutoDownloading = false;
+
+    const startBtn = document.getElementById("tel-start-auto-download");
+    const pauseBtn = document.getElementById("tel-pause-download");
+
+    if (startBtn) {
+      startBtn.textContent = "All Done!";
+      startBtn.style.background = "#4caf50";
+      startBtn.disabled = true;
+    }
+    if (pauseBtn) pauseBtn.style.display = "none";
+
+    const rescanBtn = document.getElementById("tel-rescan-continue");
+    if (rescanBtn) rescanBtn.style.display = "block";
+
+    // Scroll to bottom
+    const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
+                           document.querySelector(".bubbles-inner");
+    if (scrollContainer) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+
     updateSidebarStatus();
-
-    // Continue with next item
-    setTimeout(() => processDownloadQueue(), CONFIG.SEQUENTIAL_DOWNLOAD_DELAY);
   };
 
   // ===== HELPER FUNCTIONS =====
