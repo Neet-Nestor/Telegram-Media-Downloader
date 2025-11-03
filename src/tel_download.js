@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器 (批量下载)
 // @name:zh-TW   Telegram 受限圖片影片下載器 (批量下載)
 // @name:ru      Telegram: загрузчик медиафайлов (массовая загрузка)
-// @version      5.5.1-fork
+// @version      5.6.0-fork
 // @namespace    https://github.com/ArtyMcLabin/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content. Now with smart auto-loading bulk download!
@@ -1096,9 +1096,9 @@
     // If not currently downloading, resume from last incomplete video
     if (!isAutoDownloading) {
       if (mediaIdOrder.length > 0) {
-        // Find the first non-completed video (scanning backwards from newest)
+        // Find the first non-completed video (scanning from oldest to newest)
         let resumeIndex = -1;
-        for (let i = mediaIdOrder.length - 1; i >= 0; i--) {
+        for (let i = 0; i < mediaIdOrder.length; i++) {
           const media = mediaMap.get(mediaIdOrder[i]);
           if (media && media.status !== "completed") {
             resumeIndex = i;
@@ -1336,12 +1336,13 @@
     // Step 2: Setup auto-loader for lazy-loading video URLs
     setupIntersectionObserver();
 
-    // Step 3: Start sequential download (from newest to oldest)
-    // NOTE: Queue will grow dynamically as we scroll up and Telegram loads more messages
+    // Step 3: Start sequential download (from oldest to newest)
+    // NOTE: Queue will grow dynamically as we scroll and Telegram loads more messages
+    // Downloading oldest→newest is more robust: new videos append to end, we naturally reach them
     isAutoDownloading = true;
     autoDownloadPaused = false;
     bulkDownloadState.active = true;
-    bulkDownloadState.currentIndex = mediaIdOrder.length - 1; // Start from newest (end of array)
+    bulkDownloadState.currentIndex = 0; // Start from oldest (beginning of array)
     consecutiveNoNewVideos = 0; // Reset counter for new session
 
     startBtn.style.display = "none";
@@ -1350,8 +1351,8 @@
     const rescanBtn = document.getElementById("tel-rescan-continue");
     if (rescanBtn) rescanBtn.style.display = "none"; // Hide Resume when downloading
 
-    logger.info(`✓ Starting from newest video, will download backwards`);
-    logger.info(`🔄 Queue will expand dynamically as Telegram loads older messages`);
+    logger.info(`✓ Starting from oldest video, will download forwards`);
+    logger.info(`🔄 Queue will expand dynamically as Telegram loads more messages`);
 
     updateSidebarStatus();
 
@@ -1386,7 +1387,7 @@
 
     const { currentIndex } = bulkDownloadState;
 
-    if (currentIndex < 0) {
+    if (currentIndex >= mediaIdOrder.length) {
       logger.info("✓ All downloads completed!");
       logger.info(`Downloaded ${bulkDownloadState.downloaded} videos, ${bulkDownloadState.failed} failed`);
       isAutoDownloading = false;
@@ -1421,7 +1422,7 @@
     if (!media) {
       logger.error(`Media not found: ${mediaId}`);
       bulkDownloadState.skipped++;
-      bulkDownloadState.currentIndex--;
+      bulkDownloadState.currentIndex++;
       updateSidebarStatus();
       setTimeout(() => processDownloadQueue(), 100);
       return;
@@ -1431,7 +1432,7 @@
     if (media.status === "completed") {
       logger.info(`⏭ Skipping already-completed video: ${media.filename || mediaId}`);
       bulkDownloadState.skipped++;
-      bulkDownloadState.currentIndex--;
+      bulkDownloadState.currentIndex++;
       updateSidebarStatus();
       setTimeout(() => processDownloadQueue(), 100);
       return;
@@ -1448,7 +1449,7 @@
       logger.error(`Element not found for ${mediaId}`);
       media.status = "failed";
       bulkDownloadState.failed++;
-      bulkDownloadState.currentIndex--;
+      bulkDownloadState.currentIndex++;
       updateSidebarStatus();
       setTimeout(() => processDownloadQueue(), 100);
       return;
@@ -1494,7 +1495,7 @@
         logger.error(`Failed to auto-load video ${mediaId}`);
         media.status = "failed";
         bulkDownloadState.failed++;
-        bulkDownloadState.currentIndex--;
+        bulkDownloadState.currentIndex++;
         updateSidebarStatus();
         setTimeout(() => processDownloadQueue(), CONFIG.SEQUENTIAL_DOWNLOAD_DELAY);
         return;
@@ -1506,7 +1507,7 @@
       logger.error(`No URL for ${mediaId}`);
       media.status = "failed";
       bulkDownloadState.failed++;
-      bulkDownloadState.currentIndex--;
+      bulkDownloadState.currentIndex++;
       updateSidebarStatus();
       setTimeout(() => processDownloadQueue(), CONFIG.SEQUENTIAL_DOWNLOAD_DELAY);
       return;
@@ -1545,7 +1546,7 @@
       bulkDownloadState.failed++;
     }
 
-    bulkDownloadState.currentIndex--;
+    bulkDownloadState.currentIndex++;
     updateSidebarStatus();
 
     // Continue with next item
