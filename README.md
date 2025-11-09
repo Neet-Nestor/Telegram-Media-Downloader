@@ -18,6 +18,9 @@
 
 This fork adds experimental bulk/batch download features for automatically downloading multiple videos from Telegram chats. The feature is currently in proof-of-concept stage and has known reliability issues.
 
+**⚠️ Known Bug - Workaround Required:**
+To see the bulk download button, you must first **open any video in the chat and then close it**. The bulk download UI will not appear until you do this. This is a known initialization bug.
+
 ### Current Test Results
 
 ![Bulk Download Test Results](docs/screenshots/bulk-download-test-results.png)
