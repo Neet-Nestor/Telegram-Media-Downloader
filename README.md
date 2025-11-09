@@ -10,6 +10,38 @@
 
 </div>
 
+---
+
+## ⚠️ Proof-of-Concept Fork Status
+
+**This is an experimental fork with bulk download functionality - UNSTABLE**
+
+This fork adds experimental bulk/batch download features for automatically downloading multiple videos from Telegram chats. The feature is currently in proof-of-concept stage and has known reliability issues.
+
+### Current Test Results
+
+![Bulk Download Test Results](docs/screenshots/bulk-download-test-results.png)
+
+**Latest test (v6.0.2-fork):**
+- **Success Rate:** ~45% (25 out of 55 videos downloaded successfully)
+- **Found:** 55 videos in test channel
+- **Downloaded:** 25 successfully
+- **Failed:** 30 failures
+
+**Failure Analysis:**
+- ~20 failures: Videos without accessible URLs (expected limitation - videos showing "pending.mp4" placeholder)
+- ~10 failures: "Element not found in DOM" - due to Telegram's DOM virtualization removing elements before download could complete
+
+**Known Limitations:**
+- Telegram's webapp only keeps ~20 messages in DOM at once, causing timing-sensitive failures
+- Success rate varies depending on chat size, scroll speed, and system performance
+- Videos may be missed if scrolling moves too fast for DOM updates
+- Some videos remain inaccessible due to Telegram's lazy-loading architecture
+
+**Recommendation:** For production use, stick with the [original upstream version](https://github.com/Neet-Nestor/Telegram-Media-Downloader) which focuses on single-video downloads and has proven stability. This fork is suitable for testing and experimentation only.
+
+---
+
 ## Overview
 This user script unlocks and enables download of images, GIFs, audios, and videos in Telegram webapps from chats, stories, and even private channels where downloading is disabled or restricted.
 
