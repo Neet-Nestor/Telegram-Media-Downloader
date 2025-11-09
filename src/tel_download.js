@@ -987,13 +987,16 @@
           const bgColor = isCurrent ? "rgba(33,150,243,0.2)" : "rgba(128,128,128,0.1)";
 
           html += `
-            <div id="queue-item-${i}" style="padding: 0.5rem; margin-bottom: 0.25rem; background: ${bgColor}; border-radius: 4px; ${isCurrent ? 'border: 2px solid #2196f3;' : ''} user-select: text;">
+            <div id="queue-item-${i}"
+                 data-message-id="${mediaId}"
+                 style="padding: 0.5rem; margin-bottom: 0.25rem; background: ${bgColor}; border-radius: 4px; ${isCurrent ? 'border: 2px solid #2196f3;' : ''} cursor: pointer; transition: background 0.2s;">
               <div style="user-select: text;">
                 <span style="color: ${statusColor}; user-select: text;">${statusIcon}</span>
                 <strong style="user-select: text;"> ${dateLabel} - ${media.filename || media.type.toUpperCase()}</strong>
                 ${isCurrent ? '<span style="color: #2196f3; user-select: text;"> ◀ CURRENT</span>' : ''}
               </div>
               <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">Type: ${media.type.toUpperCase()}</div>
+              ${media.failureReason ? `<div style="font-size: 0.75rem; color: #f44336; margin-top: 0.25rem; user-select: text;">⚠ ${media.failureReason}</div>` : ''}
             </div>
           `;
         }
@@ -1007,6 +1010,31 @@
     const previousScrollTop = queueContainer ? queueContainer.scrollTop : 0;
 
     statusArea.innerHTML = html;
+
+    // Add click event listeners to queue items for navigation
+    document.querySelectorAll('[id^="queue-item-"]').forEach(item => {
+      const messageId = item.getAttribute('data-message-id');
+      if (messageId) {
+        item.onclick = () => {
+          logger.info(`Navigating to message ${messageId}`);
+          scrollToMessage(messageId);
+        };
+
+        // Add hover effect
+        item.onmouseenter = function() {
+          if (!this.style.border.includes('2px solid #2196f3')) {
+            this.style.background = "rgba(128,128,128,0.2)";
+          }
+        };
+        item.onmouseleave = function() {
+          const index = parseInt(this.id.replace('queue-item-', ''));
+          const isCurrent = index === currentIndex && isAutoDownloading;
+          if (!isCurrent) {
+            this.style.background = "rgba(128,128,128,0.1)";
+          }
+        };
+      }
+    });
 
     // Auto-scroll to current item if downloading
     if (isAutoDownloading && currentIndex >= 0) {
@@ -1496,6 +1524,7 @@
       media.status = "failed";
       media.failureReason = "Element not found in DOM";
       bulkDownloadState.failed++;
+      addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
       return;
     }
 
@@ -1513,6 +1542,7 @@
         media.status = "failed";
         media.failureReason = "URL load failed (triggerVideoLoad returned null)";
         bulkDownloadState.failed++;
+        addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
         return;
       }
     }
@@ -1523,6 +1553,7 @@
       media.status = "failed";
       media.failureReason = "No URL available";
       bulkDownloadState.failed++;
+      addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
       return;
     }
 
@@ -1547,6 +1578,8 @@
         media.status = "completed";
         bulkDownloadState.downloaded++;
         logger.info(`✅ Downloaded: ${media.filename} (${bulkDownloadState.downloaded} total)`);
+        // Add visual indicator to the message in chat
+        addDownloadIndicatorToMessage(mediaId, "completed");
       } else {
         throw new Error("Download function returned false");
       }
@@ -1555,6 +1588,8 @@
       media.status = "failed";
       media.failureReason = `Download function error: ${error.message || error}`;
       bulkDownloadState.failed++;
+      // Add visual indicator to the message in chat
+      addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
     }
   };
 
@@ -1746,6 +1781,69 @@
     }, CONFIG.HIGHLIGHT_DURATION);
 
     return element;
+  };
+
+  // Add visual indicator badge to message element in chat
+  const addDownloadIndicatorToMessage = (messageId, status, failureReason = null) => {
+    const element = findMessageElement(messageId);
+    if (!element) {
+      logger.warn(`Cannot add indicator: element not found for ${messageId}`);
+      return;
+    }
+
+    // Remove any existing indicator
+    const existingIndicator = element.querySelector('.tel-download-indicator');
+    if (existingIndicator) {
+      existingIndicator.remove();
+    }
+
+    // Create indicator badge
+    const indicator = document.createElement('div');
+    indicator.className = 'tel-download-indicator';
+
+    let backgroundColor, icon, text, textColor;
+
+    if (status === "completed") {
+      backgroundColor = "#4caf50";
+      icon = "✓";
+      text = "Downloaded";
+      textColor = "#fff";
+    } else if (status === "failed") {
+      backgroundColor = "#f44336";
+      icon = "✗";
+      text = failureReason ? `Failed: ${failureReason}` : "Failed";
+      textColor = "#fff";
+    } else {
+      return; // Don't show indicator for other statuses
+    }
+
+    indicator.style.cssText = `
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: ${backgroundColor};
+      color: ${textColor};
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      pointer-events: none;
+      max-width: 200px;
+      word-wrap: break-word;
+    `;
+
+    indicator.innerHTML = `<span style="margin-right: 4px;">${icon}</span>${text}`;
+
+    // Ensure the parent element has position relative
+    if (element.style.position !== 'relative' && element.style.position !== 'absolute') {
+      element.style.position = 'relative';
+    }
+
+    element.appendChild(indicator);
+
+    logger.info(`Added ${status} indicator to message ${messageId}`);
   };
 
   const triggerVideoLoad = (element) => {

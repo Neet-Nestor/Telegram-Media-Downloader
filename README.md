@@ -41,6 +41,15 @@ To see the bulk download button, you must first **open any video in the chat and
 - Videos may be missed if scrolling moves too fast for DOM updates
 - Some videos remain inaccessible due to Telegram's lazy-loading architecture
 
+**Semi-Automation Workflow:**
+Given the ~45% success rate, this fork now includes a **semi-automation layer** to streamline manual downloads of failed items:
+- ✅ **Visual indicators on posts**: Each message shows a green ✓ badge for success or red ✗ badge with failure reason
+- 🔗 **Clickable queue items**: Click any item in the download queue to jump directly to that message in chat
+- 📋 **Failure reason display**: Queue shows specific error reasons (e.g., "Element not found", "No URL available")
+- 🎯 **One-click navigation**: No hunting through chat needed - all failed items are clearly marked and easily accessible
+
+This workflow maximizes efficiency: automation handles what it can, clear visual feedback shows what needs manual attention, and one-click navigation makes manual downloads quick and painless.
+
 **Recommendation:** For production use, stick with the [original upstream version](https://github.com/Neet-Nestor/Telegram-Media-Downloader) which focuses on single-video downloads and has proven stability. This fork is suitable for testing and experimentation only.
 
 ---
@@ -100,6 +109,46 @@ For channels and chats that disable downloading and restrict saving content, thi
 ![Story Download](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ3Z5Y2VzM2QzbW1xc3ZwNTQ2N3Q0a3lnanpxdW55c2Qzajl5NXZsaCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/xJFjBGi8isHPR5cuHl/giphy.gif)
 
 For videos, a progress bar will show on the bottom-right corder after you started downloading. For images and audios, there won't be a progress bar.
+
+### Bulk Download (Experimental - Fork Only)
+
+This fork includes experimental bulk download functionality with a semi-automated workflow:
+
+1. **Open bulk download panel**:
+   - First, open and close any video in the chat (required workaround for initialization bug)
+   - Click the floating "Bulk Download" button that appears on the right side of the screen
+
+2. **Scan the chat**:
+   - Click "Start Scanning" to find all media in the current chat
+   - The script will automatically scroll through the chat and collect all videos, images, and audio files
+
+3. **Review the queue**:
+   - All found media will appear in the download queue
+   - Items are sorted chronologically (newest first by default)
+   - Queue shows status icons: ⏳ (pending), ⏬ (downloading), ✓ (completed), ✗ (failed)
+
+4. **Start bulk download**:
+   - Click "Start Auto Download" to begin downloading all items
+   - The script will attempt each download automatically
+   - **Success rate ~45%** - many downloads will fail due to Telegram's architecture
+
+5. **Handle failed items** (semi-automation):
+   - After bulk download completes, check the chat for visual indicators:
+     - **Green ✓ badges** = Successfully downloaded
+     - **Red ✗ badges** = Failed (with specific error reason)
+   - Click any queue item to jump directly to that message in chat
+   - Manually download failed items using the individual download button on each post
+
+6. **Export status** (optional):
+   - Click "Copy Full Status" to export comprehensive debugging info
+   - Includes success/failure breakdown with specific error reasons
+   - Useful for troubleshooting or reporting issues
+
+**Best Practices:**
+- Let the scan complete fully before starting downloads
+- Don't scroll manually while bulk download is running
+- Use clickable queue items to quickly navigate to failed downloads
+- Export status if you encounter unexpected behavior
 
 ### Supported Webapp Versions
 There are 2 different versions of telegram webapps:
