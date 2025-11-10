@@ -1963,43 +1963,7 @@
            document.querySelector(`[data-message-id="${messageId}"]`);
   };
 
-  // Helper: Close any opened media viewer (video/image viewer)
-  const closeMediaViewer = () => {
-    try {
-      // Try to find and click the close button for media viewer
-      const closeButton = document.querySelector('.btn-icon.rp.tgico-close') ||
-                         document.querySelector('.media-viewer-close') ||
-                         document.querySelector('[title="Close (Esc)"]') ||
-                         document.querySelector('.btn-icon.tgico-close');
-
-      if (closeButton) {
-        closeButton.click();
-        logger.info("Closed media viewer");
-        return true;
-      }
-
-      // Fallback: simulate ESC key press
-      const escEvent = new KeyboardEvent('keydown', {
-        key: 'Escape',
-        keyCode: 27,
-        code: 'Escape',
-        which: 27,
-        bubbles: true,
-        cancelable: true
-      });
-      document.dispatchEvent(escEvent);
-      logger.info("Simulated ESC key to close media viewer");
-      return true;
-    } catch (error) {
-      logger.warn("Could not close media viewer:", error);
-      return false;
-    }
-  };
-
   const scrollToMessage = (messageId) => {
-    // Close any opened media viewer first
-    closeMediaViewer();
-
     const element = findMessageElement(messageId);
 
     if (!element) {
