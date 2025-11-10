@@ -812,6 +812,13 @@
       height: 20px;
       margin: 0;
       flex-shrink: 0;
+      appearance: auto;
+      -webkit-appearance: checkbox;
+      -moz-appearance: checkbox;
+      opacity: 1 !important;
+      visibility: visible !important;
+      position: relative !important;
+      display: inline-block !important;
     `;
     imageCheckbox.onchange = () => {
       includeImages = imageCheckbox.checked;
@@ -849,6 +856,13 @@
       height: 20px;
       margin: 0;
       flex-shrink: 0;
+      appearance: auto;
+      -webkit-appearance: checkbox;
+      -moz-appearance: checkbox;
+      opacity: 1 !important;
+      visibility: visible !important;
+      position: relative !important;
+      display: inline-block !important;
     `;
     skipCheckbox.onchange = () => {
       skipAlreadyDownloaded = skipCheckbox.checked;
