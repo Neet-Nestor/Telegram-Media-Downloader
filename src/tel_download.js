@@ -1557,7 +1557,10 @@
 
     // Step 2: Download ALL videos in current view that aren't already completed
     const videosToDownload = Array.from(mediaMap.entries()).filter(([id, media]) =>
-      media.status !== "completed" && media.status !== "failed" && media.status !== "downloading"
+      media.status !== "completed" &&
+      media.status !== "failed" &&
+      media.status !== "downloading" &&
+      media.status !== "already-exists"
     );
 
     logger.info(`Will attempt to download ${videosToDownload.length} new videos from current view`);
