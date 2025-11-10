@@ -72,6 +72,9 @@
   let isAutoDownloading = false;
   let autoDownloadPaused = false;
   let consecutiveNoNewVideos = 0; // Track when we've stopped finding new videos
+  let currentlyHighlightedElement = null; // Track currently highlighted message for persistent highlighting
+  let includeImages = false; // Toggle for including images in discovery/download
+  let skipAlreadyDownloaded = true; // Skip items already marked as completed
   let nextDisplayNumber = 1; // Permanent display number, never changes
 
   let bulkDownloadState = {
@@ -779,6 +782,82 @@
     closeBtn.onmouseout = () => closeBtn.style.background = "#d9534f";
     closeBtn.onclick = () => closeSidebar();
 
+    // Settings area for checkboxes
+    const settingsArea = document.createElement("div");
+    settingsArea.style.cssText = `
+      padding: 0.75rem;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 4px;
+      margin-bottom: 0.75rem;
+    `;
+
+    const imageCheckboxLabel = document.createElement("label");
+    imageCheckboxLabel.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      user-select: none;
+    `;
+
+    const imageCheckbox = document.createElement("input");
+    imageCheckbox.type = "checkbox";
+    imageCheckbox.id = "tel-include-images";
+    imageCheckbox.checked = includeImages;
+    imageCheckbox.style.cssText = `
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+    `;
+    imageCheckbox.onchange = () => {
+      includeImages = imageCheckbox.checked;
+      logger.info(`Include images in discovery: ${includeImages}`);
+    };
+
+    const imageCheckboxText = document.createElement("span");
+    imageCheckboxText.textContent = "Include images in discovery/download";
+    imageCheckboxText.style.cssText = `color: #333;`;
+
+    imageCheckboxLabel.appendChild(imageCheckbox);
+    imageCheckboxLabel.appendChild(imageCheckboxText);
+    settingsArea.appendChild(imageCheckboxLabel);
+
+    // Skip already downloaded checkbox
+    const skipCheckboxLabel = document.createElement("label");
+    skipCheckboxLabel.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      user-select: none;
+      margin-top: 0.5rem;
+    `;
+    skipCheckboxLabel.title = "Skips items already marked as 'completed' from previous download attempts in this session";
+
+    const skipCheckbox = document.createElement("input");
+    skipCheckbox.type = "checkbox";
+    skipCheckbox.id = "tel-skip-downloaded";
+    skipCheckbox.checked = skipAlreadyDownloaded;
+    skipCheckbox.style.cssText = `
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+    `;
+    skipCheckbox.onchange = () => {
+      skipAlreadyDownloaded = skipCheckbox.checked;
+      logger.info(`Skip already downloaded: ${skipAlreadyDownloaded}`);
+    };
+
+    const skipCheckboxText = document.createElement("span");
+    skipCheckboxText.textContent = "Skip already downloaded";
+    skipCheckboxText.style.cssText = `color: #333;`;
+
+    skipCheckboxLabel.appendChild(skipCheckbox);
+    skipCheckboxLabel.appendChild(skipCheckboxText);
+    settingsArea.appendChild(skipCheckboxLabel);
+
     buttonArea.appendChild(startAutoBtn);
     buttonArea.appendChild(pauseBtn);
     buttonArea.appendChild(rescanBtn);
@@ -788,6 +867,7 @@
 
     sidebar.appendChild(header);
     sidebar.appendChild(statusArea);
+    sidebar.appendChild(settingsArea);
     sidebar.appendChild(buttonArea);
 
     document.body.appendChild(sidebar);
@@ -890,6 +970,10 @@
       m.status !== "failed"
     ).length;
 
+    const alreadyExists = Array.from(mediaMap.values()).filter(m =>
+      m.status === "already-exists"
+    ).length;
+
     const formatDate = (timestamp) => {
       if (!timestamp) return "Unknown date";
       const date = new Date(timestamp);
@@ -909,12 +993,13 @@
         <p style="user-select: text;"><strong>✓ Downloaded:</strong> ${downloaded}</p>
         <p style="user-select: text;"><strong>Skipped:</strong> ${skipped}</p>
         <p style="user-select: text;"><strong>✗ Failed:</strong> ${failed}</p>
+        ${alreadyExists > 0 ? `<p style="color: #9c27b0; user-select: text;"><strong>⊙ Already Exists:</strong> ${alreadyExists}</p>` : ''}
         ${needsLoading > 0 ? `<p style="color: #ff9800; user-select: text;"><strong>⚠ Waiting for URL:</strong> ${needsLoading} <span style="font-size: 0.85rem;">(Telegram hasn't loaded video URLs yet - script will try to auto-load)</span></p>` : ''}
         ${loaded > 0 ? `<p style="color: #4caf50; user-select: text;"><strong>⏳ Ready to download:</strong> ${loaded}</p>` : ''}
 
         <div style="margin-top: 0.75rem; padding: 0.5rem; background: rgba(128,128,128,0.1); border-radius: 4px; font-size: 0.85rem; user-select: text;">
           <strong>Legend:</strong><br/>
-          ⏬ = Downloading now | ✓ = Success | ✗ = Failed<br/>
+          ⏬ = Downloading now | ✓ = Success | ✗ = Failed | ⊙ = Already Exists<br/>
           ⚠ = Needs URL (will auto-try) | ⏳ = Ready
         </div>
       </div>
@@ -938,9 +1023,12 @@
         })();
 
         html += `
-          <div style="padding: 0.5rem; margin-bottom: 0.5rem; background: rgba(244,67,54,0.1); border-left: 3px solid #f44336; border-radius: 4px; user-select: text;">
+          <div class="tel-failed-item"
+               data-message-id="${mediaId}"
+               style="padding: 0.5rem; margin-bottom: 0.5rem; background: rgba(244,67,54,0.1); border-left: 3px solid #f44336; border-radius: 4px; cursor: pointer; transition: background 0.2s;">
             <div style="user-select: text;"><strong style="user-select: text;">✗ ${failedDateLabel} - ${media.filename || media.type.toUpperCase()}</strong></div>
             <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">Type: ${media.type.toUpperCase()}</div>
+            ${media.failureReason ? `<div style="font-size: 0.75rem; color: #f44336; margin-top: 0.25rem; user-select: text;">⚠ ${media.failureReason}</div>` : ''}
           </div>
         `;
       });
@@ -975,13 +1063,15 @@
             status === "completed" ? "✓" :
             status === "downloading" ? "⏬" :
             status === "needs-load" ? "⚠" :
-            status === "failed" ? "✗" : "⏳";
+            status === "failed" ? "✗" :
+            status === "already-exists" ? "⊙" : "⏳";
 
           const statusColor =
             status === "completed" ? "#4caf50" :
             status === "downloading" ? "#2196f3" :
             status === "needs-load" ? "#ff9800" :
-            status === "failed" ? "#f44336" : "#888";
+            status === "failed" ? "#f44336" :
+            status === "already-exists" ? "#9c27b0" : "#888";
 
           const isCurrent = i === currentIndex && isAutoDownloading;
           const bgColor = isCurrent ? "rgba(33,150,243,0.2)" : "rgba(128,128,128,0.1)";
@@ -1010,6 +1100,25 @@
     const previousScrollTop = queueContainer ? queueContainer.scrollTop : 0;
 
     statusArea.innerHTML = html;
+
+    // Add click event listeners to failed items for navigation (SSoT: reuses scrollToMessage)
+    document.querySelectorAll('.tel-failed-item').forEach(item => {
+      const messageId = item.getAttribute('data-message-id');
+      if (messageId) {
+        item.onclick = () => {
+          logger.info(`Navigating to failed message ${messageId}`);
+          scrollToMessage(messageId);
+        };
+
+        // Add hover effect
+        item.onmouseenter = function() {
+          this.style.background = "rgba(244,67,54,0.2)";
+        };
+        item.onmouseleave = function() {
+          this.style.background = "rgba(244,67,54,0.1)";
+        };
+      }
+    });
 
     // Add click event listeners to queue items for navigation
     document.querySelectorAll('[id^="queue-item-"]').forEach(item => {
@@ -1513,6 +1622,14 @@
 
   // Helper: Download a single video
   const downloadSingleVideo = async (mediaId, media) => {
+    // Skip if already downloaded (when checkbox is enabled)
+    if (skipAlreadyDownloaded && media.status === "completed") {
+      logger.info(`⊙ Skipping already downloaded: ${media.filename}`);
+      media.status = "already-exists";
+      updateSidebarStatus();
+      return;
+    }
+
     media.status = "downloading";
     updateSidebarStatus();
 
@@ -1748,7 +1865,43 @@
            document.querySelector(`[data-message-id="${messageId}"]`);
   };
 
+  // Helper: Close any opened media viewer (video/image viewer)
+  const closeMediaViewer = () => {
+    try {
+      // Try to find and click the close button for media viewer
+      const closeButton = document.querySelector('.btn-icon.rp.tgico-close') ||
+                         document.querySelector('.media-viewer-close') ||
+                         document.querySelector('[title="Close (Esc)"]') ||
+                         document.querySelector('.btn-icon.tgico-close');
+
+      if (closeButton) {
+        closeButton.click();
+        logger.info("Closed media viewer");
+        return true;
+      }
+
+      // Fallback: simulate ESC key press
+      const escEvent = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        keyCode: 27,
+        code: 'Escape',
+        which: 27,
+        bubbles: true,
+        cancelable: true
+      });
+      document.dispatchEvent(escEvent);
+      logger.info("Simulated ESC key to close media viewer");
+      return true;
+    } catch (error) {
+      logger.warn("Could not close media viewer:", error);
+      return false;
+    }
+  };
+
   const scrollToMessage = (messageId) => {
+    // Close any opened media viewer first
+    closeMediaViewer();
+
     const element = findMessageElement(messageId);
 
     if (!element) {
@@ -1756,29 +1909,26 @@
       return null;
     }
 
-    // Scroll to START (top of viewport) to trigger Telegram to load older messages above
+    // Scroll to center of viewport for best visibility
     element.scrollIntoView({
       behavior: "smooth",
-      block: "start"  // Changed from "center" to "start" to scroll further up
+      block: "center"
     });
 
-    // Additionally scroll UP by 500px to aggressively trigger pagination
-    const scrollContainer = document.querySelector("#column-center .scrollable-y") ||
-                           document.querySelector(".bubbles-inner");
-    if (scrollContainer) {
-      setTimeout(() => {
-        scrollContainer.scrollTop -= 500; // Scroll 500px up to load older messages
-      }, 300);
+    // Remove previous highlight
+    if (currentlyHighlightedElement && currentlyHighlightedElement !== element) {
+      currentlyHighlightedElement.style.backgroundColor = '';
+      currentlyHighlightedElement.style.transition = '';
     }
 
-    // Highlight
-    const originalBg = element.style.backgroundColor;
-    element.style.backgroundColor = "rgba(0, 136, 204, 0.3)";
+    // Add persistent yellow highlight to current element
+    element.style.backgroundColor = "rgba(255, 235, 59, 0.4)"; // Yellow highlight
     element.style.transition = "background-color 0.3s";
 
-    setTimeout(() => {
-      element.style.backgroundColor = originalBg;
-    }, CONFIG.HIGHLIGHT_DURATION);
+    // Track this as the currently highlighted element
+    currentlyHighlightedElement = element;
+
+    logger.info(`Scrolled to and highlighted message: ${messageId}`);
 
     return element;
   };
@@ -1925,27 +2075,30 @@
         return;
       }
 
-      const hasImage = bubble.querySelector("img.thumbnail") ||
-                      bubble.querySelector(".album-item") ||
-                      bubble.classList.contains("photo");
+      // Only discover images if includeImages is enabled
+      if (includeImages) {
+        const hasImage = bubble.querySelector("img.thumbnail") ||
+                        bubble.querySelector(".album-item") ||
+                        bubble.classList.contains("photo");
 
-      if (hasImage) {
-        const img = bubble.querySelector("img.thumbnail") || bubble.querySelector("img");
-        if (img && img.src && !img.src.includes("data:")) {
-          mediaMap.set(msgId, {
-            id: msgId,
-            type: "image",
-            url: img.src,
-            needsClick: false,
-            date: getMessageDate(bubble),
-            selector: `[data-mid="${msgId}"]`,
-            status: null,
-            filename: generateFileName(img.src, 'image'),
-            displayNumber: nextDisplayNumber++
-          });
-          mediaIdOrder.push(msgId);
-          newCount++;
-          return;
+        if (hasImage) {
+          const img = bubble.querySelector("img.thumbnail") || bubble.querySelector("img");
+          if (img && img.src && !img.src.includes("data:")) {
+            mediaMap.set(msgId, {
+              id: msgId,
+              type: "image",
+              url: img.src,
+              needsClick: false,
+              date: getMessageDate(bubble),
+              selector: `[data-mid="${msgId}"]`,
+              status: null,
+              filename: generateFileName(img.src, 'image'),
+              displayNumber: nextDisplayNumber++
+            });
+            mediaIdOrder.push(msgId);
+            newCount++;
+            return;
+          }
         }
       }
 
@@ -2006,7 +2159,7 @@
         });
         mediaIdOrder.push(msgId);
         newCount++;
-      } else if (img && img.src && !img.src.includes("data:")) {
+      } else if (includeImages && img && img.src && !img.src.includes("data:")) {
         mediaMap.set(msgId, {
           id: msgId,
           type: "image",
