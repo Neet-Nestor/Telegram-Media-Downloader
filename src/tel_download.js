@@ -786,8 +786,9 @@
     const settingsArea = document.createElement("div");
     settingsArea.style.cssText = `
       padding: 0.75rem;
-      background: rgba(0, 0, 0, 0.05);
-      border-radius: 4px;
+      background: ${isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'};
+      border: 1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)'};
+      border-radius: 6px;
       margin-bottom: 0.75rem;
     `;
 
@@ -807,8 +808,10 @@
     imageCheckbox.checked = includeImages;
     imageCheckbox.style.cssText = `
       cursor: pointer;
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      flex-shrink: 0;
     `;
     imageCheckbox.onchange = () => {
       includeImages = imageCheckbox.checked;
@@ -817,7 +820,7 @@
 
     const imageCheckboxText = document.createElement("span");
     imageCheckboxText.textContent = "Include images in discovery/download";
-    imageCheckboxText.style.cssText = `color: #333;`;
+    imageCheckboxText.style.cssText = `color: ${isDarkMode ? '#e0e0e0' : '#333'}; font-weight: 500;`;
 
     imageCheckboxLabel.appendChild(imageCheckbox);
     imageCheckboxLabel.appendChild(imageCheckboxText);
@@ -842,8 +845,10 @@
     skipCheckbox.checked = skipAlreadyDownloaded;
     skipCheckbox.style.cssText = `
       cursor: pointer;
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      flex-shrink: 0;
     `;
     skipCheckbox.onchange = () => {
       skipAlreadyDownloaded = skipCheckbox.checked;
@@ -852,7 +857,7 @@
 
     const skipCheckboxText = document.createElement("span");
     skipCheckboxText.textContent = "Skip already downloaded";
-    skipCheckboxText.style.cssText = `color: #333;`;
+    skipCheckboxText.style.cssText = `color: ${isDarkMode ? '#e0e0e0' : '#333'}; font-weight: 500;`;
 
     skipCheckboxLabel.appendChild(skipCheckbox);
     skipCheckboxLabel.appendChild(skipCheckboxText);
