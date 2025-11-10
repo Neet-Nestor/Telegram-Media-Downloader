@@ -1982,6 +1982,11 @@
       icon = "✗";
       text = failureReason ? `Failed: ${failureReason}` : "Failed";
       textColor = "#fff";
+    } else if (status === "scanned") {
+      backgroundColor = "#2196f3";
+      icon = "🔍";
+      text = "Scanned";
+      textColor = "#fff";
     } else {
       return; // Don't show indicator for other statuses
     }
@@ -2091,6 +2096,8 @@
         });
         mediaIdOrder.push(msgId);
         newCount++;
+        // Add "scanned" indicator to the message
+        addDownloadIndicatorToMessage(msgId, "scanned");
         return;
       }
 
@@ -2116,6 +2123,8 @@
             });
             mediaIdOrder.push(msgId);
             newCount++;
+            // Add "scanned" indicator to the message
+            addDownloadIndicatorToMessage(msgId, "scanned");
             return;
           }
         }
@@ -2139,6 +2148,8 @@
           });
           mediaIdOrder.push(msgId);
           newCount++;
+          // Add "scanned" indicator to the message
+          addDownloadIndicatorToMessage(msgId, "scanned");
         }
       }
     });
@@ -2178,6 +2189,8 @@
         });
         mediaIdOrder.push(msgId);
         newCount++;
+        // Add "scanned" indicator to the message
+        addDownloadIndicatorToMessage(msgId, "scanned");
       } else if (includeImages && img && img.src && !img.src.includes("data:")) {
         mediaMap.set(msgId, {
           id: msgId,
@@ -2192,6 +2205,8 @@
         });
         mediaIdOrder.push(msgId);
         newCount++;
+        // Add "scanned" indicator to the message
+        addDownloadIndicatorToMessage(msgId, "scanned");
       }
     });
 
