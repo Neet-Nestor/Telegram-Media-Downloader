@@ -766,11 +766,11 @@
       logger.info(`Opening downloads page: ${downloadsUrl}`);
     };
 
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "Close";
-    closeBtn.style.cssText = `
+    const hideBtn = document.createElement("button");
+    hideBtn.textContent = "Hide";
+    hideBtn.style.cssText = `
       padding: 0.75rem;
-      background: #d9534f;
+      background: #607d8b;
       color: white;
       border: none;
       border-radius: 6px;
@@ -778,9 +778,9 @@
       font-size: 0.9rem;
       transition: background 0.2s;
     `;
-    closeBtn.onmouseover = () => closeBtn.style.background = "#c9302c";
-    closeBtn.onmouseout = () => closeBtn.style.background = "#d9534f";
-    closeBtn.onclick = () => closeSidebar();
+    hideBtn.onmouseover = () => hideBtn.style.background = "#455a64";
+    hideBtn.onmouseout = () => hideBtn.style.background = "#607d8b";
+    hideBtn.onclick = () => toggleSidebar();
 
     // Settings area for checkboxes
     const settingsArea = document.createElement("div");
@@ -863,7 +863,7 @@
     buttonArea.appendChild(rescanBtn);
     buttonArea.appendChild(copyStatusBtn);
     buttonArea.appendChild(downloadsBtn);
-    buttonArea.appendChild(closeBtn);
+    buttonArea.appendChild(hideBtn);
 
     sidebar.appendChild(header);
     sidebar.appendChild(statusArea);
@@ -2276,6 +2276,23 @@
   const openBulkDownloadSidebar = () => {
     logger.info("Opening bulk download sidebar...");
 
+    // Check if sidebar already exists
+    const existingSidebar = document.getElementById("tel-bulk-sidebar");
+    if (existingSidebar) {
+      // If sidebar exists but is hidden, just toggle it to show
+      if (!existingSidebar.classList.contains("tel-sidebar-expanded")) {
+        logger.info("Sidebar exists but is hidden, toggling to show...");
+        toggleSidebar();
+        return;
+      } else {
+        // Sidebar is already visible, just update it
+        logger.info("Sidebar already visible, updating...");
+        updateSidebarStatus();
+        return;
+      }
+    }
+
+    // Sidebar doesn't exist, create it
     const count = findMediaMessages();
 
     if (count === 0) {
