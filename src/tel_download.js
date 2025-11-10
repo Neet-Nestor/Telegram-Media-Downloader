@@ -64,6 +64,48 @@
 
   const REFRESH_DELAY = CONFIG.REFRESH_DELAY;
 
+  // ===== PERSISTENT DOWNLOAD HISTORY (SURVIVES PAGE REFRESH) =====
+  const STORAGE_KEY = 'telegram_downloaded_files';
+  let downloadedFilesHistory = new Set();
+
+  // Load download history from localStorage
+  const loadDownloadHistory = () => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        downloadedFilesHistory = new Set(parsed);
+        logger.info(`📚 Loaded ${downloadedFilesHistory.size} previously downloaded files from history`);
+      }
+    } catch (error) {
+      logger.error("Failed to load download history:", error);
+      downloadedFilesHistory = new Set();
+    }
+  };
+
+  // Save download history to localStorage
+  const saveDownloadHistory = () => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...downloadedFilesHistory]));
+    } catch (error) {
+      logger.error("Failed to save download history:", error);
+    }
+  };
+
+  // Add filename to download history
+  const addToDownloadHistory = (filename) => {
+    downloadedFilesHistory.add(filename);
+    saveDownloadHistory();
+  };
+
+  // Check if file was already downloaded (in any session)
+  const wasAlreadyDownloaded = (filename) => {
+    return downloadedFilesHistory.has(filename);
+  };
+
+  // Load history on script startup
+  loadDownloadHistory();
+
   // ===== BULK DOWNLOAD STATE - MAP-BASED ARCHITECTURE =====
   let mediaMap = new Map(); // Key: messageId, Value: { id, type, url, date, needsClick, selector, status, displayNumber }
   let mediaIdOrder = []; // Ordered array of message IDs (chronological order)
@@ -877,6 +919,29 @@
     skipCheckboxLabel.appendChild(skipCheckboxText);
     settingsArea.appendChild(skipCheckboxLabel);
 
+    // Clear history link
+    const clearHistoryLink = document.createElement("a");
+    clearHistoryLink.textContent = `Clear download history (${downloadedFilesHistory.size} files)`;
+    clearHistoryLink.href = "javascript:void(0)";
+    clearHistoryLink.style.cssText = `
+      display: block;
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: ${isDarkMode ? '#64b5f6' : '#1976d2'};
+      text-decoration: underline;
+      cursor: pointer;
+    `;
+    clearHistoryLink.onclick = () => {
+      if (confirm(`Clear download history? This will remove ${downloadedFilesHistory.size} files from the skip list.\n\nNext download will re-download everything unless you re-check "Skip already downloaded".`)) {
+        downloadedFilesHistory.clear();
+        saveDownloadHistory();
+        logger.info("Download history cleared");
+        clearHistoryLink.textContent = `Clear download history (0 files)`;
+        alert("Download history cleared!");
+      }
+    };
+    settingsArea.appendChild(clearHistoryLink);
+
     buttonArea.appendChild(startAutoBtn);
     buttonArea.appendChild(pauseBtn);
     buttonArea.appendChild(rescanBtn);
@@ -1652,6 +1717,15 @@
       return;
     }
 
+    // Check persistent download history (survives page refresh)
+    if (skipAlreadyDownloaded && wasAlreadyDownloaded(media.filename)) {
+      logger.info(`⊙ Skipping - found in download history: ${media.filename}`);
+      media.status = "already-exists";
+      media.failureReason = "Previously downloaded (from history)";
+      updateSidebarStatus();
+      return;
+    }
+
     media.status = "downloading";
     updateSidebarStatus();
 
@@ -1717,6 +1791,8 @@
         media.status = "completed";
         bulkDownloadState.downloaded++;
         logger.info(`✅ Downloaded: ${media.filename} (${bulkDownloadState.downloaded} total)`);
+        // Add to persistent download history (survives page refresh)
+        addToDownloadHistory(media.filename);
         // Add visual indicator to the message in chat
         addDownloadIndicatorToMessage(mediaId, "completed");
       } else {
