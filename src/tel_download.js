@@ -988,6 +988,7 @@
     document.body.appendChild(collapsedTab);
 
     updateSidebarStatus();
+    updateHistoryCounter(); // Ensure counter shows current count when sidebar created
   };
 
   const toggleSidebar = () => {
