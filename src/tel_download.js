@@ -96,6 +96,7 @@
   const addToDownloadHistory = (filename) => {
     downloadedFilesHistory.add(filename);
     saveDownloadHistory();
+    updateHistoryCounter(); // Update counter in UI
   };
 
   // Check if file was already downloaded (in any session)
@@ -921,6 +922,7 @@
 
     // Clear history link
     const clearHistoryLink = document.createElement("a");
+    clearHistoryLink.id = "tel-clear-history-link";
     clearHistoryLink.textContent = `Clear download history (${downloadedFilesHistory.size} files)`;
     clearHistoryLink.href = "javascript:void(0)";
     clearHistoryLink.style.cssText = `
@@ -936,7 +938,7 @@
         downloadedFilesHistory.clear();
         saveDownloadHistory();
         logger.info("Download history cleared");
-        clearHistoryLink.textContent = `Clear download history (0 files)`;
+        updateHistoryCounter();
         alert("Download history cleared!");
       }
     };
@@ -1031,6 +1033,92 @@
 
     bulkDownloadState.active = false;
     logger.info("Sidebar closed");
+  };
+
+  // Helper: Update the download history counter
+  const updateHistoryCounter = () => {
+    const link = document.getElementById("tel-clear-history-link");
+    if (link) {
+      link.textContent = `Clear download history (${downloadedFilesHistory.size} files)`;
+    }
+  };
+
+  // Helper: Update just the summary counts (lightweight, no queue rebuild)
+  const updateSummaryCounts = () => {
+    const statusArea = document.getElementById("tel-sidebar-status");
+    if (!statusArea) return;
+
+    const { downloaded, skipped, failed } = bulkDownloadState;
+    const total = mediaIdOrder.length;
+
+    const alreadyExists = Array.from(mediaMap.values()).filter(m =>
+      m.status === "already-exists"
+    ).length;
+
+    // Find and update just the count elements
+    const countElements = statusArea.querySelectorAll('p strong');
+    countElements.forEach(el => {
+      const text = el.parentElement.textContent;
+      if (text.includes('✓ Downloaded:')) {
+        el.parentElement.innerHTML = `<strong>✓ Downloaded:</strong> ${downloaded}`;
+      } else if (text.includes('✗ Failed:')) {
+        el.parentElement.innerHTML = `<strong>✗ Failed:</strong> ${failed}`;
+      } else if (text.includes('⊙ Already Exists:')) {
+        el.parentElement.innerHTML = `<strong>⊙ Already Exists:</strong> ${alreadyExists}`;
+      } else if (text.includes('Found so far:')) {
+        el.parentElement.innerHTML = `<strong>Found so far:</strong> ${total}${isAutoDownloading ? ' (scanning...)' : ''}`;
+      }
+    });
+  };
+
+  // Helper: Lightweight update for just the queue item status (avoids full rebuild)
+  const updateQueueItem = (index) => {
+    const queueItem = document.getElementById(`queue-item-${index}`);
+    if (!queueItem) return;
+
+    const mediaId = mediaIdOrder[index];
+    const media = mediaMap.get(mediaId);
+    if (!media) return;
+
+    const status = media.status || (media.needsClick ? "needs-load" : "ready");
+    const statusIcon =
+      status === "completed" ? "✓" :
+      status === "downloading" ? "⏬" :
+      status === "needs-load" ? "⚠" :
+      status === "failed" ? "✗" :
+      status === "already-exists" ? "⊙" : "⏳";
+
+    const statusColor =
+      status === "completed" ? "#4caf50" :
+      status === "downloading" ? "#2196f3" :
+      status === "needs-load" ? "#ff9800" :
+      status === "failed" ? "#f44336" :
+      status === "already-exists" ? "#9c27b0" : "#888";
+
+    const isCurrent = index === bulkDownloadState.currentIndex && isAutoDownloading;
+    const bgColor = isCurrent ? "rgba(33,150,243,0.2)" : "rgba(128,128,128,0.1)";
+
+    // Update background and border
+    queueItem.style.background = bgColor;
+    queueItem.style.border = isCurrent ? '2px solid #2196f3' : '';
+
+    // Update the status icon and color
+    const statusSpan = queueItem.querySelector('span');
+    if (statusSpan) {
+      statusSpan.style.color = statusColor;
+      statusSpan.textContent = statusIcon;
+    }
+
+    // Update or remove "CURRENT" label
+    const currentLabel = queueItem.querySelector('[style*="color: #2196f3"]');
+    if (isCurrent && !currentLabel) {
+      const labelDiv = queueItem.querySelector('div');
+      if (labelDiv) {
+        labelDiv.innerHTML += '<span style="color: #2196f3; user-select: text;"> ◀ CURRENT</span>';
+      }
+    } else if (!isCurrent && currentLabel) {
+      currentLabel.remove();
+    }
   };
 
   const updateSidebarStatus = () => {
@@ -1720,11 +1808,14 @@
 
   // Helper: Download a single video
   const downloadSingleVideo = async (mediaId, media) => {
+    // Find the index for this media item
+    const mediaIndex = mediaIdOrder.indexOf(mediaId);
+
     // Skip if already downloaded (when checkbox is enabled)
     if (skipAlreadyDownloaded && media.status === "completed") {
       logger.info(`⊙ Skipping already downloaded: ${media.filename}`);
       media.status = "already-exists";
-      updateSidebarStatus();
+      if (mediaIndex >= 0) updateQueueItem(mediaIndex); // Lightweight update
       return;
     }
 
@@ -1733,12 +1824,12 @@
       logger.info(`⊙ Skipping - found in download history: ${media.filename}`);
       media.status = "already-exists";
       media.failureReason = "Previously downloaded (from history)";
-      updateSidebarStatus();
+      if (mediaIndex >= 0) updateQueueItem(mediaIndex); // Lightweight update
       return;
     }
 
     media.status = "downloading";
-    updateSidebarStatus();
+    if (mediaIndex >= 0) updateQueueItem(mediaIndex); // Lightweight update
 
     // Find DOM element
     const element = findMessageElement(mediaId);
@@ -1806,6 +1897,9 @@
         addToDownloadHistory(media.filename);
         // Add visual indicator to the message in chat
         addDownloadIndicatorToMessage(mediaId, "completed");
+        // Lightweight UI updates
+        if (mediaIndex >= 0) updateQueueItem(mediaIndex);
+        updateSummaryCounts();
       } else {
         throw new Error("Download function returned false");
       }
@@ -1816,6 +1910,9 @@
       bulkDownloadState.failed++;
       // Add visual indicator to the message in chat
       addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
+      // Lightweight UI updates
+      if (mediaIndex >= 0) updateQueueItem(mediaIndex);
+      updateSummaryCounts();
     }
   };
 
