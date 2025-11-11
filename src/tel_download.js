@@ -1790,6 +1790,9 @@
       logger.info(`🔍 Found ${newVideosFound} NEW videos after scrolling! Continuing...`);
       consecutiveNoNewVideos = 0;
 
+      // Rebuild queue to show newly discovered items
+      updateSidebarStatus();
+
       // Continue processing - new videos found
       setTimeout(() => processDownloadQueue(), 500);
     } else {
