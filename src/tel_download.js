@@ -1369,6 +1369,7 @@
     const pending = [];
     const needsUrl = [];
     const inQueue = [];
+    const alreadyExists = [];
 
     for (const [messageId, media] of mediaMap) {
       const dateLabel = (() => {
@@ -1400,6 +1401,9 @@
           break;
         case 'downloading':
           inQueue.push(item);
+          break;
+        case 'already-exists':
+          alreadyExists.push(item);
           break;
         default:
           if (media.needsClick || !media.url) {
@@ -1439,6 +1443,7 @@
         successful: successful.length,
         failed: failed.length,
         pending: pending.length,
+        alreadyExists: alreadyExists.length,
         needsUrlLoad: needsUrl.length,
         currentlyDownloading: inQueue.length
       },
@@ -1466,6 +1471,12 @@
           dateLabel: item.dateLabel,
           filename: item.filename,
           date: item.date
+        })),
+        alreadyExists: alreadyExists.map(item => ({
+          dateLabel: item.dateLabel,
+          filename: item.filename,
+          date: item.date,
+          messageId: item.messageId
         }))
       },
       debugInfo: {
