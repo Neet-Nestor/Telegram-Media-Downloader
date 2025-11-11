@@ -1064,8 +1064,8 @@
         el.parentElement.innerHTML = `<strong>✓ Downloaded:</strong> ${downloaded}`;
       } else if (text.includes('✗ Failed:')) {
         el.parentElement.innerHTML = `<strong>✗ Failed:</strong> ${failed}`;
-      } else if (text.includes('⊙ Already Exists:')) {
-        el.parentElement.innerHTML = `<strong>⊙ Already Exists:</strong> ${alreadyExists}`;
+      } else if (text.includes('○ Downloaded:') || text.includes('⊙ Already Exists:')) {
+        el.parentElement.innerHTML = `<strong>○ Downloaded:</strong> ${alreadyExists}`;
       } else if (text.includes('Found so far:')) {
         el.parentElement.innerHTML = `<strong>Found so far:</strong> ${total}${isAutoDownloading ? ' (scanning...)' : ''}`;
       }
@@ -1087,14 +1087,14 @@
       status === "downloading" ? "⏬" :
       status === "needs-load" ? "⚠" :
       status === "failed" ? "✗" :
-      status === "already-exists" ? "⊙" : "⏳";
+      status === "already-exists" ? "○" : "⏳";
 
     const statusColor =
       status === "completed" ? "#4caf50" :
       status === "downloading" ? "#2196f3" :
       status === "needs-load" ? "#ff9800" :
       status === "failed" ? "#f44336" :
-      status === "already-exists" ? "#9c27b0" : "#888";
+      status === "already-exists" ? "#fbc02d" : "#888";
 
     const isCurrent = index === bulkDownloadState.currentIndex && isAutoDownloading;
     const bgColor = isCurrent ? "rgba(33,150,243,0.2)" : "rgba(128,128,128,0.1)";
@@ -1166,13 +1166,13 @@
         <p style="user-select: text;"><strong>✓ Downloaded:</strong> ${downloaded}</p>
         <p style="user-select: text;"><strong>Skipped:</strong> ${skipped}</p>
         <p style="user-select: text;"><strong>✗ Failed:</strong> ${failed}</p>
-        ${alreadyExists > 0 ? `<p style="color: #9c27b0; user-select: text;"><strong>⊙ Already Exists:</strong> ${alreadyExists}</p>` : ''}
+        ${alreadyExists > 0 ? `<p style="color: #fbc02d; user-select: text;"><strong>○ Downloaded:</strong> ${alreadyExists}</p>` : ''}
         ${needsLoading > 0 ? `<p style="color: #ff9800; user-select: text;"><strong>⚠ Waiting for URL:</strong> ${needsLoading} <span style="font-size: 0.85rem;">(Telegram hasn't loaded video URLs yet - script will try to auto-load)</span></p>` : ''}
         ${loaded > 0 ? `<p style="color: #4caf50; user-select: text;"><strong>⏳ Ready to download:</strong> ${loaded}</p>` : ''}
 
         <div style="margin-top: 0.75rem; padding: 0.5rem; background: rgba(128,128,128,0.1); border-radius: 4px; font-size: 0.85rem; user-select: text;">
           <strong>Legend:</strong><br/>
-          ⏬ = Downloading now | ✓ = Success | ✗ = Failed | ⊙ = Already Exists<br/>
+          ⏬ = Downloading now | ✓ = Success | ✗ = Failed | ○ = Downloaded (skipped)<br/>
           ⚠ = Needs URL (will auto-try) | ⏳ = Ready
         </div>
       </div>
@@ -1237,14 +1237,14 @@
             status === "downloading" ? "⏬" :
             status === "needs-load" ? "⚠" :
             status === "failed" ? "✗" :
-            status === "already-exists" ? "⊙" : "⏳";
+            status === "already-exists" ? "○" : "⏳";
 
           const statusColor =
             status === "completed" ? "#4caf50" :
             status === "downloading" ? "#2196f3" :
             status === "needs-load" ? "#ff9800" :
             status === "failed" ? "#f44336" :
-            status === "already-exists" ? "#9c27b0" : "#888";
+            status === "already-exists" ? "#fbc02d" : "#888";
 
           const isCurrent = i === currentIndex && isAutoDownloading;
           const bgColor = isCurrent ? "rgba(33,150,243,0.2)" : "rgba(128,128,128,0.1)";
@@ -1817,7 +1817,7 @@
 
     // Skip if already downloaded (when checkbox is enabled)
     if (skipAlreadyDownloaded && media.status === "completed") {
-      logger.info(`⊙ Skipping already downloaded: ${media.filename}`);
+      logger.info(`○ Skipping already downloaded: ${media.filename}`);
       media.status = "already-exists";
       if (mediaIndex >= 0) updateQueueItem(mediaIndex); // Lightweight update
       return;
@@ -1825,7 +1825,7 @@
 
     // Check persistent download history (survives page refresh)
     if (skipAlreadyDownloaded && wasAlreadyDownloaded(media.filename)) {
-      logger.info(`⊙ Skipping - found in download history: ${media.filename}`);
+      logger.info(`○ Skipping - found in download history: ${media.filename}`);
       media.status = "already-exists";
       media.failureReason = "Previously downloaded (from history)";
       if (mediaIndex >= 0) updateQueueItem(mediaIndex); // Lightweight update
