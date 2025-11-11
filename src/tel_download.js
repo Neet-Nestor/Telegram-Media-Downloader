@@ -2081,9 +2081,13 @@
     const mediaData = mediaMap.get(messageId);
     if (!mediaData) return null;
 
-    return document.querySelector(mediaData.selector) ||
-           document.querySelector(`[data-mid="${messageId}"]`) ||
-           document.querySelector(`[data-message-id="${messageId}"]`);
+    // IMPORTANT: Only search for messages in the CHAT, not in our sidebar!
+    // Use #column-center to avoid matching queue items
+    const chatArea = document.querySelector('#column-center') || document.body;
+
+    return chatArea.querySelector(mediaData.selector) ||
+           chatArea.querySelector(`[data-mid="${messageId}"]`) ||
+           chatArea.querySelector(`[data-message-id="${messageId}"]`);
   };
 
   const scrollToMessage = (messageId) => {
