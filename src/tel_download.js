@@ -1691,12 +1691,15 @@
     const pauseBtn = document.getElementById("tel-pause-download");
 
     if (autoDownloadPaused) {
+      // Resuming
       autoDownloadPaused = false;
+      isAutoDownloading = true; // Ensure this is set when resuming
       pauseBtn.textContent = "Pause";
       pauseBtn.style.background = "#ff9800";
       logger.info("Auto-download resumed");
       processDownloadQueue();
     } else {
+      // Pausing
       autoDownloadPaused = true;
       pauseBtn.textContent = "Resume";
       pauseBtn.style.background = "#4caf50";
@@ -1841,7 +1844,7 @@
     if (!element) {
       logger.error(`❌ Element not found for ${mediaId} - ${media.filename}`);
       media.status = "failed";
-      media.failureReason = "Element not found in DOM";
+      media.failureReason = "Video disappeared from view. Fix: Scroll to the video in chat, then click 'Re-scan & Resume'";
       bulkDownloadState.failed++;
       addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
       return;
@@ -1859,7 +1862,7 @@
       } else {
         logger.error(`❌ Failed to load URL for ${mediaId}`);
         media.status = "failed";
-        media.failureReason = "URL load failed (triggerVideoLoad returned null)";
+        media.failureReason = "Video not loaded. Fix: Click the video in chat to load it, then click 'Re-scan & Resume'";
         bulkDownloadState.failed++;
         addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
         return;
@@ -1870,7 +1873,7 @@
     if (!media.url) {
       logger.error(`❌ No URL for ${mediaId} - ${media.filename}`);
       media.status = "failed";
-      media.failureReason = "No URL available";
+      media.failureReason = "Video URL missing. Fix: Open the video in full screen, then click 'Re-scan & Resume'";
       bulkDownloadState.failed++;
       addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
       return;
