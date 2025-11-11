@@ -1120,6 +1120,14 @@
     } else if (!isCurrent && currentLabel) {
       currentLabel.remove();
     }
+
+    // Update failureReason color (yellow for already-exists, red for failed)
+    const failureReasonDiv = queueItem.querySelector('div[style*="font-size: 0.75rem"]');
+    if (failureReasonDiv && media.failureReason) {
+      const reasonColor = status === 'already-exists' ? '#fbc02d' : '#f44336';
+      failureReasonDiv.style.color = reasonColor;
+      failureReasonDiv.innerHTML = `⚠ ${media.failureReason}`;
+    }
   };
 
   const updateSidebarStatus = () => {
@@ -1259,7 +1267,7 @@
                 ${isCurrent ? '<span style="color: #2196f3; user-select: text;"> ◀ CURRENT</span>' : ''}
               </div>
               <div style="font-size: 0.85rem; color: #888; margin-top: 0.25rem; user-select: text;">Type: ${media.type.toUpperCase()}</div>
-              ${media.failureReason ? `<div style="font-size: 0.75rem; color: #f44336; margin-top: 0.25rem; user-select: text;">⚠ ${media.failureReason}</div>` : ''}
+              ${media.failureReason ? `<div style="font-size: 0.75rem; color: ${status === 'already-exists' ? '#fbc02d' : '#f44336'}; margin-top: 0.25rem; user-select: text;">⚠ ${media.failureReason}</div>` : ''}
             </div>
           `;
         }
