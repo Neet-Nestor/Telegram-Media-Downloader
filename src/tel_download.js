@@ -1901,7 +1901,12 @@
       } else {
         logger.error(`❌ Failed to load URL for ${mediaId}`);
         media.status = "failed";
-        media.failureReason = "Video not loaded. Fix: Click the video in chat to load it, then click 'Re-scan & Resume'";
+        // Check if it's a "pending.mp4" - Telegram placeholder that can't be downloaded
+        if (media.filename && media.filename.includes('pending.mp4')) {
+          media.failureReason = "Telegram hasn't loaded this video (shows 'pending.mp4'). Cannot be downloaded - must download manually by clicking the video.";
+        } else {
+          media.failureReason = "Video not loaded. Fix: Click the video in chat to load it, then click 'Re-scan & Resume'";
+        }
         bulkDownloadState.failed++;
         addDownloadIndicatorToMessage(mediaId, "failed", media.failureReason);
         return;
