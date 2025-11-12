@@ -2112,13 +2112,20 @@
     const mediaData = mediaMap.get(messageId);
     if (!mediaData) return null;
 
-    // IMPORTANT: Only search for messages in the CHAT, not in our sidebar!
-    // Use #column-center to avoid matching queue items
-    const chatArea = document.querySelector('#column-center') || document.body;
+    // Search for message element, but exclude our sidebar
+    const trySelector = (selector) => {
+      const matches = document.querySelectorAll(selector);
+      for (const match of matches) {
+        // Skip if inside our sidebar
+        if (match.closest('#tel-bulk-sidebar')) continue;
+        return match;
+      }
+      return null;
+    };
 
-    return chatArea.querySelector(mediaData.selector) ||
-           chatArea.querySelector(`[data-mid="${messageId}"]`) ||
-           chatArea.querySelector(`[data-message-id="${messageId}"]`);
+    return trySelector(mediaData.selector) ||
+           trySelector(`[data-mid="${messageId}"]`) ||
+           trySelector(`[data-message-id="${messageId}"]`);
   };
 
   const scrollToMessage = (messageId) => {
