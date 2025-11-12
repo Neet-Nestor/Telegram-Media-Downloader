@@ -21,16 +21,31 @@
 // ==/UserScript==
 
 (function () {
+  // Logger with log buffer for debugging
+  const logBuffer = [];
+  const MAX_LOG_BUFFER_SIZE = 100;
+
   const logger = {
     info: (message, fileName = null) => {
-      console.log(
-        `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`
-      );
+      const logMessage = `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`;
+      console.log(logMessage);
+      logBuffer.push({ type: 'info', message: logMessage, timestamp: new Date().toISOString() });
+      if (logBuffer.length > MAX_LOG_BUFFER_SIZE) logBuffer.shift();
     },
     error: (message, fileName = null) => {
-      console.error(
-        `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`
-      );
+      const logMessage = `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`;
+      console.error(logMessage);
+      logBuffer.push({ type: 'error', message: logMessage, timestamp: new Date().toISOString() });
+      if (logBuffer.length > MAX_LOG_BUFFER_SIZE) logBuffer.shift();
+    },
+    warn: (message, fileName = null) => {
+      const logMessage = `[Tel Download] ${fileName ? `${fileName}: ` : ""}${message}`;
+      console.warn(logMessage);
+      logBuffer.push({ type: 'warn', message: logMessage, timestamp: new Date().toISOString() });
+      if (logBuffer.length > MAX_LOG_BUFFER_SIZE) logBuffer.shift();
+    },
+    getRecentLogs: (count = 50) => {
+      return logBuffer.slice(-count);
     },
   };
 
@@ -1596,7 +1611,13 @@
           };
         }).filter(Boolean),
         totalDomMessages: document.querySelectorAll('.message').length,
-        hasScrollContainer: !!document.querySelector("#column-center .scrollable-y")
+        hasScrollContainer: !!document.querySelector("#column-center .scrollable-y"),
+        recentLogs: logger.getRecentLogs(50),
+        downloadHistorySize: downloadedFilesHistory.size,
+        flags: {
+          skipAlreadyDownloaded,
+          includeImages
+        }
       }
     };
 
@@ -1720,6 +1741,8 @@
   // This ensures DOM elements exist when we download them
 
   const processDownloadQueue = async () => {
+    logger.info(`[processDownloadQueue] Called. isAutoDownloading=${isAutoDownloading}, autoDownloadPaused=${autoDownloadPaused}`);
+
     if (!isAutoDownloading || autoDownloadPaused) {
       logger.info("Queue processing stopped (paused or inactive)");
       return;
@@ -1806,7 +1829,11 @@
       updateSidebarStatus();
 
       // Continue processing - new videos found
-      setTimeout(() => processDownloadQueue(), 500);
+      logger.info(`Scheduling next cycle in 500ms (new videos found)...`);
+      setTimeout(() => {
+        logger.info(`Timeout callback executing - continuing after finding new videos`);
+        processDownloadQueue();
+      }, 500);
     } else {
       consecutiveNoNewVideos++;
       logger.info(`No new videos found (${consecutiveNoNewVideos}/${CONFIG.SAME_COUNT_THRESHOLD} attempts)`);
@@ -1816,7 +1843,11 @@
         finishDownloading();
       } else {
         // Try scrolling more
-        setTimeout(() => processDownloadQueue(), 500);
+        logger.info(`Scheduling next cycle in 500ms (retrying scroll)...`);
+        setTimeout(() => {
+          logger.info(`Timeout callback executing - retrying scroll`);
+          processDownloadQueue();
+        }, 500);
       }
     }
   };
