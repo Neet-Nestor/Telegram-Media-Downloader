@@ -2233,36 +2233,96 @@
     logger.info(`Added ${status} indicator to message ${messageId}`);
   };
 
-  const triggerVideoLoad = (element) => {
-    return new Promise((resolve) => {
+  const triggerVideoLoad = async (element) => {
+    return new Promise(async (resolve) => {
       try {
-        // Try to trigger mouseover (no view parameter in userscript context)
-        const mouseoverEvent = new MouseEvent('mouseover', {
+        logger.info("🎬 Opening video player to load real URL...");
+
+        // Find clickable area to open video player
+        const clickableArea = element.querySelector('.media-video') ||
+                             element.querySelector('.video-player') ||
+                             element.querySelector('.video-container') ||
+                             element.querySelector('video') ||
+                             element.querySelector('[data-media-id]') ||
+                             element;
+
+        // REAL CLICK to open video player (not simulated event)
+        clickableArea.click();
+        logger.info("Clicked video, waiting for player to open...");
+
+        // Wait for video player to open
+        await new Promise(r => setTimeout(r, 800));
+
+        // Try to find real URL in opened video player (multiple attempts)
+        let attempts = 0;
+        let videoUrl = null;
+        const maxAttempts = 15; // Try for 4.5 seconds total
+
+        while (attempts < maxAttempts && !videoUrl) {
+          // Look for video element in the opened player
+          const videoPlayer = document.querySelector('.media-viewer video') ||
+                             document.querySelector('.ckin__player video') ||
+                             document.querySelector('#video-player video') ||
+                             document.querySelector('video[src]');
+
+          if (videoPlayer) {
+            const src = videoPlayer.src || videoPlayer.currentSrc;
+            if (src && !src.includes('pending.mp4') && src.includes('http')) {
+              videoUrl = src;
+              logger.info(`✓ Got real URL from player: ${videoUrl.substring(0, 60)}...`);
+              break;
+            }
+          }
+
+          await new Promise(r => setTimeout(r, 300));
+          attempts++;
+
+          if (attempts % 5 === 0) {
+            logger.info(`Still waiting for video URL... (attempt ${attempts}/${maxAttempts})`);
+          }
+        }
+
+        // Close video player (ESC key)
+        const escEvent = new KeyboardEvent('keydown', {
+          key: 'Escape',
+          keyCode: 27,
+          code: 'Escape',
+          which: 27,
           bubbles: true,
           cancelable: true
         });
-        element.dispatchEvent(mouseoverEvent);
+        document.dispatchEvent(escEvent);
+        logger.info("Sent ESC to close player");
 
-        const clickableArea = element.querySelector('.media-video') ||
-                             element.querySelector('.video-player') ||
-                             element;
+        // Wait for player to close
+        await new Promise(r => setTimeout(r, 300));
 
-        if (clickableArea) {
-          const clickEvent = new MouseEvent('click', {
+        if (videoUrl) {
+          logger.info(`✅ Successfully loaded URL by opening player`);
+        } else {
+          logger.warn(`⚠ Failed to load URL even after opening player`);
+        }
+
+        resolve(videoUrl);
+
+      } catch (error) {
+        logger.error(`Error in triggerVideoLoad: ${error.message}`);
+
+        // Try to close player anyway
+        try {
+          const escEvent = new KeyboardEvent('keydown', {
+            key: 'Escape',
+            keyCode: 27,
+            code: 'Escape',
+            which: 27,
             bubbles: true,
             cancelable: true
           });
-          clickableArea.dispatchEvent(clickEvent);
-        }
-      } catch (error) {
-        logger.error(`Error triggering video load: ${error.message}`);
-      }
+          document.dispatchEvent(escEvent);
+        } catch (e) {}
 
-      setTimeout(() => {
-        const video = element.querySelector("video");
-        const videoUrl = video?.src || video?.currentSrc || element.querySelector("video source")?.src;
-        resolve(videoUrl);
-      }, CONFIG.VIDEO_LOAD_TIMEOUT);
+        resolve(null);
+      }
     });
   };
 

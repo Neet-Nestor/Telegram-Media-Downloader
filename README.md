@@ -25,24 +25,28 @@ To see the bulk download button, you must first **open any video in the chat and
 
 ![Bulk Download Test Results](docs/screenshots/bulk-download-test-results.png)
 
-**Latest test (v6.0.2-fork):**
-- **Success Rate:** ~45% (25 out of 55 videos downloaded successfully)
-- **Found:** 55 videos in test channel
-- **Downloaded:** 25 successfully
-- **Failed:** 30 failures
+**Latest test (v6.0.2-fork + click automation):**
+- **Success Rate:** Variable (~45-70% depending on conditions)
+- **Status:** EXPERIMENTAL - Unstable and incomplete
 
-**Failure Analysis:**
-- ~20 failures: Videos without accessible URLs (expected limitation - videos showing "pending.mp4" placeholder)
-- ~10 failures: "Element not found in DOM" - due to Telegram's DOM virtualization removing elements before download could complete
+**Recent Improvements:**
+- Implemented real click automation to open video players and extract URLs
+- Replaces simulated events that Telegram ignores
+- Opens player → waits for URL to load → closes player automatically
+- Improves success rate but adds ~1-2 seconds per video
 
 **Known Limitations:**
-- Telegram's webapp only keeps ~20 messages in DOM at once, causing timing-sensitive failures
-- Success rate varies depending on chat size, scroll speed, and system performance
+- **Instability:** Click automation behavior is inconsistent across different chats and conditions
+- **Telegram's lazy-loading:** Videos showing "pending.mp4" placeholder cannot be downloaded (Telegram limitation)
+- **DOM virtualization:** Telegram only keeps ~20 messages in DOM at once, causing timing-sensitive failures
+- **Success rate varies** dramatically based on chat size, scroll speed, system performance, and Telegram's internal state
 - Videos may be missed if scrolling moves too fast for DOM updates
-- Some videos remain inaccessible due to Telegram's lazy-loading architecture
+- Click automation timing may need adjustment for slower systems
+
+**Development Status:** This fork is being discontinued in its current state. The bulk download feature works but is not production-ready. Use at your own risk.
 
 **Semi-Automation Workflow:**
-Given the ~45% success rate, this fork now includes a **semi-automation layer** to streamline manual downloads of failed items:
+Given the variable success rate, this fork includes a **semi-automation layer** to streamline manual downloads of failed items:
 - ✅ **Visual indicators on posts**: Each message shows a green ✓ badge for success or red ✗ badge with failure reason
 - 🔗 **Clickable queue items**: Click any item in the download queue to jump directly to that message in chat
 - 📋 **Failure reason display**: Queue shows specific error reasons (e.g., "Element not found", "No URL available")
@@ -129,8 +133,10 @@ This fork includes experimental bulk download functionality with a semi-automate
 
 4. **Start bulk download**:
    - Click "Start Auto Download" to begin downloading all items
-   - The script will attempt each download automatically
-   - **Success rate ~45%** - many downloads will fail due to Telegram's architecture
+   - The script will attempt each download automatically using real click automation
+   - Video players will automatically open/close to extract URLs
+   - **Success rate ~45-70%** - many downloads may still fail due to Telegram's architecture and timing issues
+   - **Warning:** Behavior is unstable and may vary between sessions
 
 5. **Handle failed items** (semi-automation):
    - After bulk download completes, check the chat for visual indicators:
