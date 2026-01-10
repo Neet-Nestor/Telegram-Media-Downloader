@@ -4,7 +4,7 @@
 
 ဒီ script က Telegram Webapp တွေထဲက ဒေါင်းလုပ် ပိတ်ထားတာ၊ ဒါမှမဟုတ် ကန့်သတ်ထားတဲ့ Chats, Stories နဲ့ Private ချန်နယ်တွေအထိပါ ဓာတ်ပုံ၊ GIF နဲ့ ဗီဒီယိုတွေကို ဒေါင်းလုပ် လုပ်လို့ရအောင် Unlock လုပ်ပေးနိုင်ပါတယ်။
 
-အရေးကြီးအချက်: ဒီ script ကို **အခမဲ့** အသုံးပြုလို့ ရပါတယ်။ ဒေါင်းလုပ်ဆွဲဖို့အတွက် ပိုက်ဆံကောက်ခံနေတာမျိုးတွေ့ရင် မပေးဖို့နှင့် [GitHub issues](https://github.com/Neet-Nestor/Telegram-Media-Downloader/issues) ကို report တင်တာ၊ ဒါမှမဟုတ် ကောမန့် ဧရိယာကနေပြီး‌တော့မှ developer ကိုအသိပေးလို့ရပါတယ်။
+အရေးကြီးအချက်: ဒီ script ကို **အခမဲ့** အသုံးပြုလို့ ရပါတယ်။ ဒေါင်းလုပ်ဆွဲဖို့အတွက် ပိုက်ဆံကောက်ခံနေတာမျိုးတွေ့ရင် မပေးဖို့နှင့် [GitHub issues](https://github.com/Neet-Nestor/Telegram-Media-Downloader/issues) ကို report တင်တာ၊ ဒါမှမဟုတ် ကောမန့်ကနေပြီး‌တော့မှ developer ကိုအသိပေးလို့ရပါတယ်။
 
 
 ## Install လုပ်နည်း
@@ -35,7 +35,7 @@ Telegram Webapp မှာ ဗားရှင်း (၂) မျိုး ရှ�
 ဗီဒီယိုတွေအတွက် screen အောက်ညာဘက်မှာ Progress Bar ကို တွေ့ရပါလိမ့်မယ်။ Log တွေကို [DevTools console](https://developer.chrome.com/docs/devtools/open/) မှာလည်း စစ်ဆေးနိုင်ပါတယ်။
 
 ## Author ကို Support လုပ်လိုပါက
-ဒီ script ကို ကြိုက်နှစ်သက်တယ်ဆိုရင် [Venmo](https://venmo.com/u/NeetNestor)၊ ဒါမှမဟုတ် [buy me a coffee](https://ko-fi.com/neetnestor) ကနေ support လုပ်နိုင်ပါတယ် :)
+ဒီ script ကို ကြိုက်နှစ်သက်တယ်ဆိုရင် [Venmo](https://venmo.com/u/NeetNestor)၊ ဒါမှမဟုတ် [buy me a coffee](https://ko-fi.com/neetnestor) ကနေ support လုပ်နိုင်ပါတယ်။ :)
 
 ## ဆက်သွယ်ရန်
 ဒီ script ကို အသုံးပြုရာမှာ ပြဿနာတစ်ခုခု ကြုံတွေ့ရင် [GitHub page](https://github.com/Neet-Nestor/Telegram-Media-Downloader) ကို ဝင်ပြီး Issue တစ်ခု ဖွင့်ကာ ဆက်သွယ်နိုင်ပါတယ်။
