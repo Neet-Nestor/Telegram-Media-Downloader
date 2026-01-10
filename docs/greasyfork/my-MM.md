@@ -35,7 +35,7 @@ Telegram Webapp မှာ ဗားရှင်း (၂) မျိုး ရှ�
 ဗီဒီယိုတွေအတွက် screen အောက်ညာဘက်မှာ Progress Bar ကို တွေ့ရပါလိမ့်မယ်။ Log တွေကို [DevTools console](https://developer.chrome.com/docs/devtools/open/) မှာလည်း စစ်ဆေးနိုင်ပါတယ်။
 
 ## Author ကို Support လုပ်လိုပါက
-ဒီ script ကို ကြိုက်နှစ်သက်တယ်ဆိုရင် [Venmo](https://venmo.com/u/NeetNestor)၊ ဒါမှမဟုတ် [buy me a coffee](https://ko-fi.com/neetnestor) ကနေ support လုပ်နိုင်ပါတယ်။ :)
+ဒီ script ကို ကြိုက်နှစ်သက်တယ်ဆိုရင် [Venmo](https://venmo.com/u/NeetNestor) (သို့) [buy me a coffee](https://ko-fi.com/neetnestor) ကနေ support လုပ်နိုင်ပါတယ်။ :)
 
 ## ဆက်သွယ်ရန်
 ဒီ script ကို အသုံးပြုရာမှာ ပြဿနာတစ်ခုခု ကြုံတွေ့ရင် [GitHub page](https://github.com/Neet-Nestor/Telegram-Media-Downloader) ကို ဝင်ပြီး Issue တစ်ခု ဖွင့်ကာ ဆက်သွယ်နိုင်ပါတယ်။
