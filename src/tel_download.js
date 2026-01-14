@@ -74,6 +74,150 @@
     }
   };
 
+  // Parse filename from Content-Disposition header if present
+  const parseFilenameFromContentDisposition = (hdr) => {
+    try {
+      if (!hdr) return null;
+      // Fits common patterns: attachment; filename="name.ext" or filename=name.ext
+      const m = hdr.match(/filename\*?=(?:UTF-8''\s*)?"?([^";]+)"?/i);
+      if (m && m[1]) return m[1].trim();
+      return null;
+    } catch (e) { return null; }
+  };
+
+  // Centralized fetch-and-save helper: fetch URL, derive filename (hint/itemMid/blobId/hash), save blob
+  const fetchAndSaveUrl = async (url, { filenameHint = null, itemMid = null } = {}) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Fetch failed: ' + res.status);
+    // Try filename from headers first
+    const cd = res.headers.get('Content-Disposition');
+    let filenameFromCd = parseFilenameFromContentDisposition(cd);
+    const blob = await res.blob();
+    const contentType = res.headers.get('Content-Type') || blob.type || '';
+    const ext = (contentType.split('/')[1] || '').split(';')[0] || '';
+
+    const candidates = [];
+    if (filenameHint) candidates.push(sanitizeFilename(filenameHint));
+    if (itemMid) candidates.push(sanitizeFilename(itemMid));
+    if (filenameFromCd) candidates.push(sanitizeFilename(filenameFromCd));
+    const blobId = extractBlobIdFromUrl(url);
+    if (blobId) candidates.push(sanitizeFilename(blobId));
+    candidates.push(hashCode(url).toString(36));
+
+    const base = candidates.find(Boolean) || 'file';
+    const finalExt = ext || 'bin';
+    const finalName = base + '.' + finalExt;
+
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    document.body.appendChild(a);
+    a.href = blobUrl;
+    a.download = finalName;
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+
+    return finalName;
+  };
+
+  // Probe the opened media viewer to find a playable stream URL.
+  // Returns { url, contentType } if found, otherwise null.
+  const probeViewerStream = async (item, { maxAttempts = 3, timeout = 12000 } = {}) => {
+    // Choose the element that most reliably opens the viewer. Some album items don't
+    // have an <a> anchor — the clickable target is the media element itself (img/.album-item-media/.media-container)
+    let opener = item;
+    if (item && item.querySelector) {
+      opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
+    }
+    const playBtn = item && (item.querySelector('.video-play, .btn-circle.video-play, .toggle') || null);
+
+    const prevSuppress = typeof telSuppressMediaError !== 'undefined' ? telSuppressMediaError : false;
+    telSuppressMediaError = true;
+
+    try {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          // Close any existing viewer first to avoid stale slides being detected
+          try {
+            const existingClose = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
+            if (existingClose) {
+              existingClose.click();
+              await new Promise((r) => setTimeout(r, 200));
+            }
+          } catch (e) {}
+
+          if (playBtn) {
+            try { playBtn.click(); logger.info('Clicked in-item play button (probe attempt ' + attempt + ')'); } catch (e) { logger.info('Play button click failed during probe: ' + (e?.message || e)); }
+          }
+          try { opener && opener.click(); } catch (e) { logger.info('Opener click failed during probe: ' + (e?.message || e)); }
+
+          // Wait for viewer to open and stabilize
+          await new Promise((r) => setTimeout(r, 500));
+
+          // Try to use the viewer's native download button directly - it has the correct URL
+          const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
+          if (viewerDownloadBtn) {
+            logger.info('Found viewer download button, will click it directly instead of probing src');
+            return { url: 'USE_VIEWER_BUTTON', contentType: null, button: viewerDownloadBtn };
+          }
+
+          const start = Date.now();
+          while (Date.now() - start < timeout) {
+            try {
+              const v = document.querySelector('#MediaViewer .MediaViewerSlide--active video, .media-viewer-whole video, video.media-video, .ckin__player video');
+              if (v) {
+                const s = v.currentSrc || v.src;
+                if (s) {
+                  try {
+                    const href = new URL(s, location.href).href;
+                    // HEAD check to avoid HTML/service-worker pages
+                    let contentType = null;
+                    try {
+                      const headRes = await fetch(href, { method: 'HEAD' });
+                      contentType = headRes.headers.get('Content-Type') || '';
+                    } catch (e) { logger.info('HEAD check failed for probe URL: ' + href + ' (' + (e?.message || e) + ')'); }
+
+                    if (!contentType || contentType.indexOf('text/html') !== 0) {
+                      return { url: href, contentType };
+                    }
+                  } catch (e) {
+                    return { url: s, contentType: null };
+                  }
+                }
+              }
+
+              const streamLink = document.querySelector('#MediaViewer a[href*="stream/"]')?.href || document.querySelector('.media-viewer-whole a[href*="stream/"]')?.href;
+              if (streamLink) {
+                let contentType = null;
+                try {
+                  const headRes = await fetch(streamLink, { method: 'HEAD' });
+                  contentType = headRes.headers.get('Content-Type') || '';
+                } catch (e) { logger.info('HEAD check failed for probe stream link: ' + streamLink + ' (' + (e?.message || e) + ')'); }
+                if (!contentType || contentType.indexOf('text/html') !== 0) return { url: streamLink, contentType };
+              }
+            } catch (e) {
+              logger.error('Error while polling viewer during probe: ' + (e?.message || e));
+            }
+            await new Promise((r) => setTimeout(r, 200));
+          }
+
+          if (attempt < maxAttempts) {
+            const backoff = 500 * attempt;
+            logger.info('Viewer probe no result, retrying after ' + backoff + 'ms (attempt ' + (attempt + 1) + ')');
+            await new Promise((r) => setTimeout(r, backoff));
+          }
+        } catch (e) {
+          logger.error('Unexpected error in probe attempt: ' + (e?.message || e));
+        }
+      }
+    } finally {
+      telSuppressMediaError = prevSuppress;
+    }
+
+    return null;
+  };
+
+
   const createProgressBar = (videoId, fileName) => {
     const isDarkMode =
       document.querySelector("html").classList.contains("night") ||
@@ -1218,184 +1362,55 @@
               }
             }
 
-            // open viewer to extract streaming url with robust handling
-            const opener = item.querySelector('a') || item;
-
-            // Enable global suppression of MediaError unhandled rejections while probing
+            // Use helper to probe viewer and extract a stream URL
             telSuppressMediaError = true;
-
+            let probeRes = null;
             try {
-              // Attempt to start playback in-item if there's a play button to encourage the stream to start
-              const playBtn = item.querySelector('.video-play, .btn-circle.video-play, .btn-circle.video-play.position-center, .toggle');
-              const maxAttempts = 3;
-              const baseTimeout = 12000; // ms
-              let found = null;
+              probeRes = await probeViewerStream(item, { maxAttempts: 3, timeout: 12000 });
 
-              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                try {
-                  if (playBtn) {
-                    try {
-                      playBtn.click();
-                      logger.info('Clicked in-item play button (attempt ' + attempt + ')');
-                    } catch (e) {
-                      logger.info('Play button click failed: ' + (e?.message || e));
-                    }
-                  }
+              if (probeRes && probeRes.url) {
+                const found = probeRes.url;
+                const contentType = probeRes.contentType;
 
+                // If probe returned USE_VIEWER_BUTTON, click the viewer's download button directly
+                if (found === 'USE_VIEWER_BUTTON' && probeRes.button) {
                   try {
-                    opener.click();
-                  } catch (e) {
-                    logger.info('Opener click failed: ' + (e?.message || e));
-                  }
-
-                  const timeout = baseTimeout;
-                  const start = Date.now();
-
-                  try {
-                    while (Date.now() - start < timeout) {
-                      const v = document.querySelector('#MediaViewer .MediaViewerSlide--active video, .media-viewer-whole video, video.media-video, .ckin__player video');
-                      if (v) {
-                        v.addEventListener('error', () => {
-                          (async () => {
-                            try {
-                              const url = v.currentSrc || v.src;
-                              if (!url) {
-                                if (!telSuppressMediaError) logger.info('Video element reported an error with no src while probing viewer');
-                                return;
-                              }
-
-                              // Try HEAD to see if URL returns HTML (service worker) or media
-                              let contentType = null;
-                              try {
-                                const headRes = await fetch(url, { method: 'HEAD' });
-                                contentType = headRes.headers.get('Content-Type') || '';
-                              } catch (e) {
-                                if (!telSuppressMediaError) logger.info('HEAD check failed for ' + url + ': ' + (e?.message || e));
-                              }
-
-                              if (contentType && contentType.indexOf('text/html') === 0) {
-                                if (!telSuppressMediaError) logger.info('Viewer returned HTML, skipping video src: ' + url);
-                                return;
-                              }
-
-                              if (!telSuppressMediaError) logger.info('Video element error while probing viewer for: ' + url + ' (Content-Type: ' + (contentType || 'unknown') + ')');
-                            } catch (e) {
-                              logger.error('Error in video error handler: ' + (e?.message || e));
-                            }
-                          })();
-                        }, { once: true });
-                      }
-
-                      const s = v && (v.currentSrc || v.src);
-                      if (s) {
-                        found = s;
-                        break;
-                      }
-
-                      const streamLink = document.querySelector('#MediaViewer a[href*="stream/"]')?.href || document.querySelector('.media-viewer-whole a[href*="stream/"]')?.href;
-                      if (streamLink) {
-                        found = streamLink;
-                        break;
-                      }
-
-                      await new Promise((r) => setTimeout(r, 200));
-                    }
-                  } catch (e) {
-                    logger.error('Error while probing viewer: ' + (e?.message || e));
-                  }
-
-                  if (found) break; // success
-
-                  // retry backoff if not found
-                  if (attempt < maxAttempts) {
-                    const backoff = 500 * attempt;
-                    logger.info('Viewer probe no result, retrying after ' + backoff + 'ms (attempt ' + (attempt + 1) + ')');
-                    await new Promise((r) => setTimeout(r, backoff));
-                  }
-                } catch (e) {
-                  logger.error('Unexpected error in probe attempt: ' + (e?.message || e));
+                    probeRes.button.click();
+                    logger.info('Clicked viewer download button for correct video');
+                    if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
+                  } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
+                  await new Promise((r) => setTimeout(r, 200));
+                  continue;
                 }
-              }
 
-              if (found) {
-                try {
-                  // Quick HEAD check to avoid HTML responses that browsers can't decode as media
-                  let contentType = null;
-                  try {
-                    const headRes = await fetch(found, { method: 'HEAD' });
-                    contentType = headRes.headers.get('Content-Type') || '';
-                  } catch (e) {
-                    logger.info('HEAD check failed for: ' + found + ' (' + (e?.message || e) + ')');
-                  }
-
-                  if (contentType && contentType.indexOf('text/html') === 0) {
-                    logger.info('Found URL returns text/html, skipping: ' + found);
-                  } else {
-                    if (!(state.items && state.items[itemMid] === true)) {
-                      logger.info('Found video in viewer, starting download: ' + found);
-                      try {
-                        // If the found URL is a blob:, avoid using the range-based downloader which expects network resources.
-                        if (typeof found === 'string' && found.startsWith('blob:')) {
-                          logger.info('Found blob: URL, attempting viewer download or direct fetch: ' + found);
-
-                          // Try to use any native viewer download button first
-                          const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
-                          if (viewerDownloadBtn) {
-                            try {
-                              viewerDownloadBtn.click();
-                              logger.info('Clicked viewer download button for blob resource');
-                              // Mark as downloaded
-                              if (itemMid) {
-                                state.items = state.items || {};
-                                state.items[itemMid] = true;
-                                if (albumMid) setAlbumState(albumMid, state);
-                              }
-                            } catch (e) {
-                              logger.error('Viewer download button click failed: ' + (e?.message || e));
-                            }
-                          } else {
-                            // As a last resort fetch the blob URL and save as a file
-                            try {
-                              const resp = await fetch(found);
-                              const fetchedBlob = await resp.blob();
-                              const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
-                              const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
-                              const deduced = itemMid ? sanitizeFilename(itemMid) : (extractBlobIdFromUrl(found) || hashCode(found).toString(36));
-                              const fileName = deduced + '.' + ext;
-                              const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
-                              const a = document.createElement('a');
-                              document.body.appendChild(a);
-                              a.href = blobUrl2;
-                              a.download = fileName;
-                              a.click();
-                              document.body.removeChild(a);
-                              window.URL.revokeObjectURL(blobUrl2);
-                              if (itemMid) {
-                                state.items = state.items || {};
-                                state.items[itemMid] = true;
-                                if (albumMid) setAlbumState(albumMid, state);
-                              }
-                            } catch (e) {
-                              logger.error('Direct fetch of blob URL failed: ' + (e?.message || e));
-                            }
-                          }
+                if (contentType && contentType.indexOf('text/html') === 0) {
+                  logger.info('Found URL returns text/html, skipping: ' + found);
+                } else {
+                  if (!(state.items && state.items[itemMid] === true)) {
+                    logger.info('Found video in viewer, starting download: ' + found);
+                    try {
+                      if (typeof found === 'string' && found.startsWith('blob:')) {
+                        logger.info('Found blob: URL, attempting viewer download or direct fetch: ' + found);
+                        const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
+                        if (viewerDownloadBtn) {
+                          try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); } } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
                         } else {
-                          await tel_download_video(found, itemMid || undefined);
-                          if (itemMid) {
-                            state.items = state.items || {};
-                            state.items[itemMid] = true;
-                            if (albumMid) setAlbumState(albumMid, state);
-                          }
+                          try {
+                            const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
+                            logger.info('Saved blob resource as: ' + fileName);
+                            if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
+                          } catch (e) { logger.error('Direct fetch of blob URL failed: ' + (e?.message || e)); }
                         }
-                      } catch (e) {
-                        logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
+                      } else {
+                        await tel_download_video(found, itemMid || undefined);
+                        if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
                       }
-                    } else {
-                      logger.info('Skipping already downloaded item (by mid) while processing found video');
+                    } catch (e) {
+                      logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
                     }
+                  } else {
+                    logger.info('Skipping already downloaded item (by mid) while processing found video');
                   }
-                } catch (e) {
-                  logger.error('Error processing found video URL: ' + (e?.message || e));
                 }
                 await new Promise((r) => setTimeout(r, 200));
               } else {
@@ -1408,39 +1423,19 @@
                       logger.info('Direct src is a blob: URL; attempting viewer download or direct fetch');
                       const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
                       if (viewerDownloadBtn) {
-                        try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
+                        try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); } } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
                       } else {
                         try {
-                          const resp = await fetch(directSrc);
-                          const fetchedBlob = await resp.blob();
-                          const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
-                          const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
-                          const deduced = itemMid ? sanitizeFilename(itemMid) : (extractBlobIdFromUrl(directSrc) || hashCode(directSrc).toString(36));
-                          const fileName = deduced + '.' + ext;
-                          const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
-                          const a = document.createElement('a');
-                          document.body.appendChild(a);
-                          a.href = blobUrl2;
-                          a.download = fileName;
-                          a.click();
-                          document.body.removeChild(a);
-                          window.URL.revokeObjectURL(blobUrl2);
-                          if (itemMid) {
-                            state.items = state.items || {};
-                            state.items[itemMid] = true;
-                            if (albumMid) setAlbumState(albumMid, state);
-                          }
+                          const fileName = await fetchAndSaveUrl(directSrc, { filenameHint: itemMid, itemMid });
+                          logger.info('Saved direct blob resource as: ' + fileName);
+                          if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
                         } catch (e) {
                           logger.error('Direct fetch of blob directSrc failed: ' + (e?.message || e));
                         }
                       }
                     } else {
                       await tel_download_video(directSrc, itemMid || undefined);
-                      if (itemMid) {
-                        state.items = state.items || {};
-                        state.items[itemMid] = true;
-                        if (albumMid) setAlbumState(albumMid, state);
-                      }
+                      if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
                     }
                   } catch (e) {
                     logger.error('Fallback download failed for: ' + directSrc + ' - ' + (e?.message || e));
@@ -1473,7 +1468,15 @@
                 logger.info('Downloading media: ' + src);
                 // Use itemMid or blob id as filename hint when possible
                 const hint = itemMid ? itemMid : (extractBlobIdFromUrl(src) || undefined);
-                await tel_download_image(src, hint);
+
+                // For images we do NOT open the viewer. Use existing image download logic
+                // which fetches blob and preserves an appropriate extension/filename.
+                try {
+                  await tel_download_image(src, hint);
+                } catch (e) {
+                  logger.error('Image download failed: ' + (e?.message || e));
+                }
+
                 if (itemMid) {
                   state.items = state.items || {};
                   state.items[itemMid] = true;
@@ -1562,7 +1565,13 @@
             logger.info('Redownloading image: ' + src);
             try {
               const hint = itemMid ? itemMid : (extractBlobIdFromUrl(src) || undefined);
-              await tel_download_image(src, hint);
+
+              try {
+                await tel_download_image(src, hint);
+              } catch (e) {
+                logger.error('Redownload image failed: ' + (e?.message || e));
+              }
+
               if (itemMid) {
                 state.items[itemMid] = true;
                 if (albumMid) setAlbumState(albumMid, state);
@@ -1616,31 +1625,26 @@
           }
         }
 
-        // Otherwise open viewer and extract
+        // Otherwise open viewer and extract using the probe helper
         telSuppressMediaError = true;
         try {
-          const opener = item.querySelector('a') || item;
-          try { opener.click(); } catch (e) { logger.info('Opener click failed during redownload: ' + (e?.message || e)); }
+          const probeRes = await probeViewerStream(item, { maxAttempts: 3, timeout: 12000 });
+          if (probeRes && probeRes.url) {
+            const found = probeRes.url;
 
-          const timeout = 12000; // wait longer for redownload
-          const start = Date.now();
-          let found = null;
-          while (Date.now() - start < timeout) {
-            const v = document.querySelector('#MediaViewer .MediaViewerSlide--active video, .media-viewer-whole video, video.media-video, .ckin__player video');
-            const s = v && (v.currentSrc || v.src);
-            if (s) {
-              try { found = new URL(s, location.href).href; } catch(e) { found = s; }
-              break;
+            // If probe returned USE_VIEWER_BUTTON, click the viewer's download button directly
+            if (found === 'USE_VIEWER_BUTTON' && probeRes.button) {
+              try {
+                probeRes.button.click();
+                logger.info('Clicked viewer download button for correct video (redownload)');
+                if (itemMid) { state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
+              } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
+              await new Promise(r => setTimeout(r, 200));
+              continue;
             }
-            const streamLink = document.querySelector('#MediaViewer a[href*="stream/"]')?.href || document.querySelector('.media-viewer-whole a[href*="stream/"]')?.href;
-            if (streamLink) { found = streamLink; break; }
-            await new Promise(r => setTimeout(r, 300));
-          }
 
-          if (found) {
             logger.info('Redownloading video (viewer): ' + found);
             try {
-              // Handle blob: URLs specially
               if (typeof found === 'string' && found.startsWith('blob:')) {
                 logger.info('Found blob: URL in redownload; trying viewer download or direct fetch');
                 const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
@@ -1648,21 +1652,10 @@
                   try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
                 } else {
                   try {
-                    const resp = await fetch(found);
-                    const fetchedBlob = await resp.blob();
-                    const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
-                    const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
-                    const deduced = itemMid ? sanitizeFilename(itemMid) : (extractBlobIdFromUrl(found) || hashCode(found).toString(36));
-                    const fileName = deduced + '.' + ext;
-                    const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
-                    const a = document.createElement('a');
-                    document.body.appendChild(a);
-                    a.href = blobUrl2;
-                    a.download = fileName;
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(blobUrl2);
+                    const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
+                    logger.info('Saved redownloaded blob as: ' + fileName);
                     if (itemMid) {
+                      state.items[itemMid] = state.items || {};
                       state.items[itemMid] = true;
                       if (albumMid) setAlbumState(albumMid, state);
                     }
@@ -1765,12 +1758,11 @@
         if (!key || !key.startsWith(ALBUM_STORAGE_KEY_BASE + '_')) continue;
         const albumMid = key.substring((ALBUM_STORAGE_KEY_BASE + '_').length);
         // Look for album, single-message (group-first), or single-message (group-last) elements
-        let album = document.querySelector('.is-album[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-first[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-last[data-mid="' + albumMid + '"]');
-        // Fallback: the element with data-mid might *contain* a child marked .is-group-first/.is-group-last
-        // or simply contain media elements — treat that as an album to restore badge
+        let album = document.querySelector('.is-album[data-mid="' + albumMid + '"]');
+        // Fallback: the element with data-mid might *contain* multiple album items — treat that as an album to restore badge
         if (!album) {
           const candidate = document.querySelector('[data-mid="' + albumMid + '"]');
-          if (candidate && candidate.querySelector && (candidate.querySelector('.is-group-first, .is-group-last') || candidate.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item'))) album = candidate;
+          if (candidate && candidate.querySelectorAll && candidate.querySelectorAll('.album-item.grouped-item').length > 1) album = candidate;
         }
         if (album) createBadgeForAlbum(album);
       }
@@ -1812,31 +1804,14 @@
         }
         if (!media) return;
 
-        // Support multi-item albums (.is-album) and single messages marked with
-        // .is-group-first or .is-group-last (single video/photo bubble in a grouped thread).
-        // Also handle cases where an ancestor with the same data-mid contains those markers or media elements.
-        let album =
-          media.closest &&
-          (media.closest('.is-album') || media.closest('.is-group-first') || media.closest('.is-group-last'));
-
+        // Only treat true multi-item albums as albums. Do not mark single-message bubbles as scanned.
+        let album = media.closest && media.closest('.is-album');
         if (!album) {
-          // Prefer an ancestor that already has data-mid and media children
-          const fallback = media.closest && media.closest('[data-mid]');
-          if (fallback && (fallback.querySelector && (fallback.querySelector('.is-group-first, .is-group-last') || fallback.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item')))) {
-            album = fallback;
+          // Secondary check: accept an ancestor that contains multiple album items
+          const ancestor = media.closest && media.closest('[data-mid]');
+          if (ancestor && ancestor.querySelectorAll && ancestor.querySelectorAll('.album-item.grouped-item').length > 1) {
+            album = ancestor;
           }
-        }
-
-        // If still not found, accept a bubble ancestor that carries data-mid or contains media
-        if (!album && media.closest) {
-          const bubbleAnc = media.closest('.bubble[data-mid]');
-          if (bubbleAnc) album = bubbleAnc;
-        }
-
-        // Final fallback: any ancestor with data-mid that contains media
-        if (!album && media.closest) {
-          const anyMid = media.closest('[data-mid]');
-          if (anyMid && anyMid.querySelector && anyMid.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item')) album = anyMid;
         }
 
         if (!album) return;
@@ -1869,10 +1844,10 @@
             if (localStorage.getItem(key)) createBadgeForAlbum(el);
           };
 
-          if (node.matches && (node.matches('.is-album') || node.matches('.is-group-first') || node.matches('.is-group-last'))) {
+          if (node.matches && node.matches('.is-album')) {
             checkAndCreate(node);
           }
-          const albums = node.querySelectorAll && node.querySelectorAll('.is-album, .is-group-first, .is-group-last');
+          const albums = node.querySelectorAll && node.querySelectorAll('.is-album');
           if (albums && albums.length) {
             albums.forEach((a) => checkAndCreate(a));
           }
@@ -1882,7 +1857,7 @@
         if (m.type === 'attributes' && m.target instanceof Element) {
           const el = m.target;
           // Element itself matches, or it contains a child that marks it as a group-first/last, or contains media nodes
-          if (el.matches && (el.matches('.is-album') || el.matches('.is-group-first') || el.matches('.is-group-last') || (el.querySelector && (el.querySelector('.is-group-first, .is-group-last') || el.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item'))))) {
+          if (el.matches && (el.matches('.is-album') || (el.querySelectorAll && el.querySelectorAll('.album-item.grouped-item').length > 1))) {
             const albumMid = el.getAttribute('data-mid');
             if (albumMid) {
               const key = `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`;
