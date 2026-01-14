@@ -52,6 +52,12 @@
     return h >>> 0;
   };
 
+  const sanitizeFilename = (s) => {
+    try {
+      return String(s).replace(/[^a-z0-9\.\-_]/gi, '_');
+    } catch (e) { return String(s); }
+  };
+
   const createProgressBar = (videoId, fileName) => {
     const isDarkMode =
       document.querySelector("html").classList.contains("night") ||
@@ -168,7 +174,7 @@
     }
   };
 
-  const tel_download_video = (url) => {
+  const tel_download_video = (url, filenameHint) => {
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
@@ -178,7 +184,10 @@
       (Math.random() + 1).toString(36).substring(2, 10) +
       "_" +
       Date.now().toString();
-    let fileName = hashCode(url).toString(36) + "." + _file_extension;
+
+    // Prefer a provided filename hint (sanitized), otherwise fall back to hash-based name
+    const baseName = filenameHint ? sanitizeFilename(filenameHint) : hashCode(url).toString(36);
+    let fileName = baseName + "." + _file_extension;
 
     // Promise that resolves when download completes (or rejects on abort)
     const completionPromise = new Promise((resolve, reject) => {
@@ -1107,9 +1116,9 @@
             continue;
           }
 
-          // Detect video specifically by presence of .album-item-media .video-time as primary signal
-        // Identify video only when the album-item-media contains .video-time (primary signal)
-        const isVideo = !!item.querySelector('.album-item-media .video-time');
+          // Detect video by presence of .video-time anywhere inside the item or a <video> element
+        // This covers both grouped album items and single-message attachments
+        const isVideo = !!(item.querySelector('.video-time') || item.querySelector('video'));
           if (isVideo) {
             // try to find a direct source as a fallback, but DO NOT use it immediately — we want to open the player first
             let directSrc =
@@ -1123,6 +1132,37 @@
               const bg = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
               const m = bg && bg.match(/url\(["']?(.*?)['"]?\)/);
               if (m && m[1]) directSrc = m[1];
+            }
+
+            // If the attachment is a quoted reply (or the direct src looks like a stream/blob)
+            // prefer using the directSrc after a HEAD check to avoid opening the viewer unnecessarily.
+            if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
+              try {
+                let contentType = null;
+                try {
+                  const headRes = await fetch(directSrc, { method: 'HEAD' });
+                  contentType = headRes.headers.get('Content-Type') || '';
+                } catch (e) {
+                  logger.info('HEAD check failed for direct src: ' + directSrc + ' (' + (e?.message || e) + ')');
+                }
+
+                if (!contentType || contentType.indexOf('text/html') !== 0) {
+                  logger.info('Using direct video src for download: ' + directSrc);
+                  await tel_download_video(directSrc, itemMid || undefined);
+                  if (itemMid) {
+                    state.items = state.items || {};
+                    state.items[itemMid] = true;
+                    if (albumMid) setAlbumState(albumMid, state);
+                  }
+                  await new Promise((r) => setTimeout(r, 200));
+                  continue; // move to next item
+                } else {
+                  logger.info('Direct src HEAD returned HTML, will fall back to viewer probe: ' + directSrc);
+                }
+              } catch (e) {
+                logger.error('Error while attempting direct src download: ' + (e?.message || e));
+                // fall through to viewer probe
+              }
             }
 
             // open viewer to extract streaming url with robust handling
@@ -1241,7 +1281,7 @@
                     if (!(state.items && state.items[itemMid] === true)) {
                       logger.info('Found video in viewer, starting download: ' + found);
                       try {
-                        await tel_download_video(found);
+                        await tel_download_video(found, itemMid || undefined);
                         if (itemMid) {
                           state.items = state.items || {};
                           state.items[itemMid] = true;
@@ -1264,7 +1304,7 @@
                 if (directSrc) {
                   try {
                     logger.info('Falling back to direct src for download: ' + directSrc);
-                    await tel_download_video(directSrc);
+                    await tel_download_video(directSrc, itemMid || undefined);
                     if (itemMid) {
                       state.items = state.items || {};
                       state.items[itemMid] = true;
@@ -1375,8 +1415,8 @@
 
       for (const item of albumItems) {
         const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || null;
-        // Identify video only when the album-item-media contains .video-time (primary signal)
-        const isVideo = !!item.querySelector('.album-item-media .video-time');
+        // Identify video by presence of .video-time anywhere inside the item or a <video> element
+        const isVideo = !!(item.querySelector('.video-time') || item.querySelector('video'));
 
         if (!isVideo) {
           // Image — download immediately
@@ -1408,6 +1448,39 @@
           if (mm && mm[1]) directSrc = mm[1];
         }
 
+        // Prefer direct src for redownload when safe (reply/stream/blob/mp4)
+        if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
+          try {
+            let contentType = null;
+            try {
+              const headRes = await fetch(directSrc, { method: 'HEAD' });
+              contentType = headRes.headers.get('Content-Type') || '';
+            } catch (e) {
+              logger.info('HEAD check failed for direct src during redownload: ' + directSrc + ' (' + (e?.message || e) + ')');
+            }
+
+            if (!contentType || contentType.indexOf('text/html') !== 0) {
+              logger.info('Using direct video src for redownload: ' + directSrc);
+              try {
+                await tel_download_video(directSrc, itemMid || undefined);
+                if (itemMid) {
+                  state.items[itemMid] = true;
+                  if (albumMid) setAlbumState(albumMid, state);
+                }
+              } catch (e) {
+                logger.error('Redownload direct src failed: ' + (e?.message || e));
+              }
+              await new Promise(r => setTimeout(r, 200));
+              continue; // next item
+            } else {
+              logger.info('Direct src HEAD returned HTML during redownload, will fall back to viewer probe: ' + directSrc);
+            }
+          } catch (e) {
+            logger.error('Error while attempting direct src redownload: ' + (e?.message || e));
+            // fall through to viewer probe
+          }
+        }
+
         // Otherwise open viewer and extract
         telSuppressMediaError = true;
         try {
@@ -1432,7 +1505,7 @@
           if (found) {
             logger.info('Redownloading video (viewer): ' + found);
             try {
-              await tel_download_video(found);
+              await tel_download_video(found, itemMid || undefined);
               if (itemMid) {
                 state.items[itemMid] = true;
                 if (albumMid) setAlbumState(albumMid, state);
@@ -1445,7 +1518,7 @@
             if (directSrc) {
               try {
                 logger.info('Falling back to direct src for redownload: ' + directSrc);
-                await tel_download_video(directSrc);
+                await tel_download_video(directSrc, itemMid || undefined);
                 if (itemMid) {
                   state.items[itemMid] = true;
                   if (albumMid) setAlbumState(albumMid, state);
@@ -1494,8 +1567,13 @@
         const key = localStorage.key(i);
         if (!key || !key.startsWith(ALBUM_STORAGE_KEY_BASE + '_')) continue;
         const albumMid = key.substring((ALBUM_STORAGE_KEY_BASE + '_').length);
-        // Look for both album and single-message (group-first) elements
-        const album = document.querySelector('.is-album[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-first[data-mid="' + albumMid + '"]');
+        // Look for album, single-message (group-first), or single-message (group-last) elements
+        let album = document.querySelector('.is-album[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-first[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-last[data-mid="' + albumMid + '"]');
+        // Fallback: the element with data-mid might *contain* a child marked .is-group-first/.is-group-last
+        if (!album) {
+          const candidate = document.querySelector('[data-mid="' + albumMid + '"]');
+          if (candidate && candidate.querySelector && candidate.querySelector('.is-group-first, .is-group-last')) album = candidate;
+        }
         if (album) createBadgeForAlbum(album);
       }
     } catch (e) {
@@ -1510,13 +1588,28 @@
     document.body.addEventListener('click', (e) => {
       try {
         const clicked = e.target;
-        const media = clicked.closest && clicked.closest('.media-photo');
+        // Accept clicks on images, canvases, videos, or the container around them
+        let target = clicked.closest && (clicked.closest('.media-photo') || clicked.closest('.canvas-thumbnail') || clicked.closest('.media-video') || clicked.closest('.media-container') || clicked.closest('.media-container-aspecter') || clicked.closest('.attachment'));
+        if (!target) return;
+        // If the target is a container, find the actual media element inside it
+        let media = null;
+        if (target.matches && target.matches('.media-photo, .canvas-thumbnail, .media-video')) {
+          media = target;
+        } else if (target.querySelector) {
+          media = target.querySelector('.media-photo, .canvas-thumbnail, .media-video');
+        }
         if (!media) return;
-        // Support both multi-item albums (.is-album) and single messages marked with
-        // .is-group-first (single video/photo bubble in a grouped thread)
-        const album =
+
+        // Support multi-item albums (.is-album) and single messages marked with
+        // .is-group-first or .is-group-last (single video/photo bubble in a grouped thread).
+        // Also handle cases where an ancestor with the same data-mid contains those markers.
+        let album =
           media.closest &&
-          (media.closest('.is-album') || media.closest('.is-group-first'));
+          (media.closest('.is-album') || media.closest('.is-group-first') || media.closest('.is-group-last'));
+        if (!album) {
+          const fallback = media.closest && media.closest('[data-mid]');
+          if (fallback && (fallback.querySelector && fallback.querySelector('.is-group-first, .is-group-last'))) album = fallback;
+        }
         if (!album) return;
 
         const albumMid = album.getAttribute && album.getAttribute('data-mid');
@@ -1547,10 +1640,10 @@
             if (localStorage.getItem(key)) createBadgeForAlbum(el);
           };
 
-          if (node.matches && (node.matches('.is-album') || node.matches('.is-group-first'))) {
+          if (node.matches && (node.matches('.is-album') || node.matches('.is-group-first') || node.matches('.is-group-last'))) {
             checkAndCreate(node);
           }
-          const albums = node.querySelectorAll && node.querySelectorAll('.is-album, .is-group-first');
+          const albums = node.querySelectorAll && node.querySelectorAll('.is-album, .is-group-first, .is-group-last');
           if (albums && albums.length) {
             albums.forEach((a) => checkAndCreate(a));
           }
@@ -1559,7 +1652,8 @@
         // Handle attribute changes (e.g., data-mid or class added later)
         if (m.type === 'attributes' && m.target instanceof Element) {
           const el = m.target;
-          if (el.matches && (el.matches('.is-album') || el.matches('.is-group-first'))) {
+          // Element itself matches, or it contains a child that marks it as a group-first/last
+          if (el.matches && (el.matches('.is-album') || el.matches('.is-group-first') || el.matches('.is-group-last') || (el.querySelector && el.querySelector('.is-group-first, .is-group-last')))) {
             const albumMid = el.getAttribute('data-mid');
             if (albumMid) {
               const key = `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`;
