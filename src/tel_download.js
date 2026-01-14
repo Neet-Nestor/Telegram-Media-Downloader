@@ -58,6 +58,22 @@
     } catch (e) { return String(s); }
   };
 
+  // Extract ID portion from blob URLs robustly.
+  const extractBlobIdFromUrl = (u) => {
+    try {
+      const s = String(u || '');
+      // take last path segment and try to match UUID-like pattern
+      const last = s.split('/').pop();
+      const m = last && last.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/);
+      if (m) return m[1];
+      // fallback: return last segment if reasonably short
+      if (last && last.length <= 64) return last;
+      return null;
+    } catch (e) {
+      return null;
+    }
+  };
+
   const createProgressBar = (videoId, fileName) => {
     const isDarkMode =
       document.querySelector("html").classList.contains("night") ||
@@ -185,27 +201,35 @@
       "_" +
       Date.now().toString();
 
-    // Prefer a provided filename hint (sanitized), otherwise fall back to hash-based name
-    const baseName = filenameHint ? sanitizeFilename(filenameHint) : hashCode(url).toString(36);
-    let fileName = baseName + "." + _file_extension;
+    // Filename determination:
+    // Priority: filenameHint (if provided) -> metadata.fileName (stream/ JSON) -> blob-id (if blob URL) -> hash(url)
+    let baseName = null;
+    let fileName = null;
+    if (filenameHint) baseName = sanitizeFilename(filenameHint);
 
     // Promise that resolves when download completes (or rejects on abort)
     const completionPromise = new Promise((resolve, reject) => {
       downloadCompletionResolvers.set(videoId, { resolve, reject });
     });
 
-    // Some video src is in format:
-    // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
+    // Try to extract embedded filename from URL metadata if present
     try {
-      const metadata = JSON.parse(
-        decodeURIComponent(url.split("/")[url.split("/").length - 1])
-      );
-      if (metadata.fileName) {
+      const metaRaw = decodeURIComponent(url.split("/")[url.split("/").length - 1]);
+      const metadata = JSON.parse(metaRaw);
+      if (metadata && metadata.fileName) {
         fileName = metadata.fileName;
       }
     } catch (e) {
-      // Invalid JSON string, pass extracting fileName
+      // ignore invalid metadata
     }
+
+    if (!baseName && !fileName) {
+      const blobId = extractBlobIdFromUrl(url);
+      if (blobId) baseName = sanitizeFilename(blobId);
+    }
+    if (!baseName && !fileName) baseName = hashCode(url).toString(36);
+    if (!fileName) fileName = baseName + "." + _file_extension;
+
     logger.info(`URL: ${url}`, fileName);
 
     const fetchNextPart = (_writable) => {
@@ -504,18 +528,47 @@
     }
   };
 
-  const tel_download_image = (imageUrl) => {
-    const fileName =
-      (Math.random() + 1).toString(36).substring(2, 10) + ".jpeg"; // assume jpeg
+  const tel_download_image = async (imageUrl, filenameHint) => {
+    // Try to preserve a sensible extension and filename. Use filenameHint first, then blob id, then a random name.
+    let ext = 'jpeg';
+    try {
+      const m = String(imageUrl).match(/\.([a-z0-9]{2,5})(?:[?#]|$)/i);
+      if (m && m[1]) ext = m[1];
+      else if (imageUrl && imageUrl.startsWith('blob:')) {
+        // Try to fetch a small chunk to determine type
+        try {
+          const r = await fetch(imageUrl);
+          const b = await r.blob();
+          if (b && b.type) ext = (b.type.split('/')[1] || ext).split(';')[0];
+          // Save blob directly so we don't rely on a href blob with unknown name
+          const deduced = filenameHint ? sanitizeFilename(filenameHint) : (extractBlobIdFromUrl(imageUrl) || hashCode(imageUrl).toString(36));
+          const fileName = deduced + '.' + ext;
+          const blobUrl = window.URL.createObjectURL(b);
+          const a = document.createElement('a');
+          document.body.appendChild(a);
+          a.href = blobUrl;
+          a.download = fileName;
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(blobUrl);
+          logger.info('Download triggered', fileName);
+          return Promise.resolve();
+        } catch (e) {
+          // fall back to simple anchor method
+        }
+      }
+    } catch (e) {}
 
-    const a = document.createElement("a");
+    const fileName = filenameHint ? sanitizeFilename(filenameHint) + '.' + ext : (Math.random() + 1).toString(36).substring(2, 10) + '.' + ext;
+
+    const a = document.createElement('a');
     document.body.appendChild(a);
     a.href = imageUrl;
     a.download = fileName;
     a.click();
     document.body.removeChild(a);
 
-    logger.info("Download triggered", fileName);
+    logger.info('Download triggered', fileName);
     return Promise.resolve();
   };
 
@@ -1134,9 +1187,9 @@
               if (m && m[1]) directSrc = m[1];
             }
 
-            // If the attachment is a quoted reply (or the direct src looks like a stream/blob)
+
             // prefer using the directSrc after a HEAD check to avoid opening the viewer unnecessarily.
-            if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
+            else if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
               try {
                 let contentType = null;
                 try {
@@ -1281,11 +1334,58 @@
                     if (!(state.items && state.items[itemMid] === true)) {
                       logger.info('Found video in viewer, starting download: ' + found);
                       try {
-                        await tel_download_video(found, itemMid || undefined);
-                        if (itemMid) {
-                          state.items = state.items || {};
-                          state.items[itemMid] = true;
-                          if (albumMid) setAlbumState(albumMid, state);
+                        // If the found URL is a blob:, avoid using the range-based downloader which expects network resources.
+                        if (typeof found === 'string' && found.startsWith('blob:')) {
+                          logger.info('Found blob: URL, attempting viewer download or direct fetch: ' + found);
+
+                          // Try to use any native viewer download button first
+                          const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
+                          if (viewerDownloadBtn) {
+                            try {
+                              viewerDownloadBtn.click();
+                              logger.info('Clicked viewer download button for blob resource');
+                              // Mark as downloaded
+                              if (itemMid) {
+                                state.items = state.items || {};
+                                state.items[itemMid] = true;
+                                if (albumMid) setAlbumState(albumMid, state);
+                              }
+                            } catch (e) {
+                              logger.error('Viewer download button click failed: ' + (e?.message || e));
+                            }
+                          } else {
+                            // As a last resort fetch the blob URL and save as a file
+                            try {
+                              const resp = await fetch(found);
+                              const fetchedBlob = await resp.blob();
+                              const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
+                              const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
+                              const deduced = itemMid ? sanitizeFilename(itemMid) : (extractBlobIdFromUrl(found) || hashCode(found).toString(36));
+                              const fileName = deduced + '.' + ext;
+                              const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
+                              const a = document.createElement('a');
+                              document.body.appendChild(a);
+                              a.href = blobUrl2;
+                              a.download = fileName;
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(blobUrl2);
+                              if (itemMid) {
+                                state.items = state.items || {};
+                                state.items[itemMid] = true;
+                                if (albumMid) setAlbumState(albumMid, state);
+                              }
+                            } catch (e) {
+                              logger.error('Direct fetch of blob URL failed: ' + (e?.message || e));
+                            }
+                          }
+                        } else {
+                          await tel_download_video(found, itemMid || undefined);
+                          if (itemMid) {
+                            state.items = state.items || {};
+                            state.items[itemMid] = true;
+                            if (albumMid) setAlbumState(albumMid, state);
+                          }
                         }
                       } catch (e) {
                         logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
@@ -1304,11 +1404,43 @@
                 if (directSrc) {
                   try {
                     logger.info('Falling back to direct src for download: ' + directSrc);
-                    await tel_download_video(directSrc, itemMid || undefined);
-                    if (itemMid) {
-                      state.items = state.items || {};
-                      state.items[itemMid] = true;
-                      if (albumMid) setAlbumState(albumMid, state);
+                    if (directSrc.startsWith('blob:')) {
+                      logger.info('Direct src is a blob: URL; attempting viewer download or direct fetch');
+                      const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
+                      if (viewerDownloadBtn) {
+                        try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
+                      } else {
+                        try {
+                          const resp = await fetch(directSrc);
+                          const fetchedBlob = await resp.blob();
+                          const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
+                          const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
+                          const deduced = itemMid ? sanitizeFilename(itemMid) : (extractBlobIdFromUrl(directSrc) || hashCode(directSrc).toString(36));
+                          const fileName = deduced + '.' + ext;
+                          const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
+                          const a = document.createElement('a');
+                          document.body.appendChild(a);
+                          a.href = blobUrl2;
+                          a.download = fileName;
+                          a.click();
+                          document.body.removeChild(a);
+                          window.URL.revokeObjectURL(blobUrl2);
+                          if (itemMid) {
+                            state.items = state.items || {};
+                            state.items[itemMid] = true;
+                            if (albumMid) setAlbumState(albumMid, state);
+                          }
+                        } catch (e) {
+                          logger.error('Direct fetch of blob directSrc failed: ' + (e?.message || e));
+                        }
+                      }
+                    } else {
+                      await tel_download_video(directSrc, itemMid || undefined);
+                      if (itemMid) {
+                        state.items = state.items || {};
+                        state.items[itemMid] = true;
+                        if (albumMid) setAlbumState(albumMid, state);
+                      }
                     }
                   } catch (e) {
                     logger.error('Fallback download failed for: ' + directSrc + ' - ' + (e?.message || e));
@@ -1339,7 +1471,9 @@
               const src = imgEl.src;
               if (!(itemMid && state.items && state.items[itemMid])) {
                 logger.info('Downloading media: ' + src);
-                tel_download_image(src);
+                // Use itemMid or blob id as filename hint when possible
+                const hint = itemMid ? itemMid : (extractBlobIdFromUrl(src) || undefined);
+                await tel_download_image(src, hint);
                 if (itemMid) {
                   state.items = state.items || {};
                   state.items[itemMid] = true;
@@ -1427,7 +1561,8 @@
           if (src) {
             logger.info('Redownloading image: ' + src);
             try {
-              await tel_download_image(src);
+              const hint = itemMid ? itemMid : (extractBlobIdFromUrl(src) || undefined);
+              await tel_download_image(src, hint);
               if (itemMid) {
                 state.items[itemMid] = true;
                 if (albumMid) setAlbumState(albumMid, state);
@@ -1449,7 +1584,7 @@
         }
 
         // Prefer direct src for redownload when safe (reply/stream/blob/mp4)
-        if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
+        else if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
           try {
             let contentType = null;
             try {
@@ -1505,10 +1640,42 @@
           if (found) {
             logger.info('Redownloading video (viewer): ' + found);
             try {
-              await tel_download_video(found, itemMid || undefined);
-              if (itemMid) {
-                state.items[itemMid] = true;
-                if (albumMid) setAlbumState(albumMid, state);
+              // Handle blob: URLs specially
+              if (typeof found === 'string' && found.startsWith('blob:')) {
+                logger.info('Found blob: URL in redownload; trying viewer download or direct fetch');
+                const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
+                if (viewerDownloadBtn) {
+                  try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
+                } else {
+                  try {
+                    const resp = await fetch(found);
+                    const fetchedBlob = await resp.blob();
+                    const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
+                    const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
+                    const deduced = itemMid ? sanitizeFilename(itemMid) : (extractBlobIdFromUrl(found) || hashCode(found).toString(36));
+                    const fileName = deduced + '.' + ext;
+                    const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
+                    const a = document.createElement('a');
+                    document.body.appendChild(a);
+                    a.href = blobUrl2;
+                    a.download = fileName;
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(blobUrl2);
+                    if (itemMid) {
+                      state.items[itemMid] = true;
+                      if (albumMid) setAlbumState(albumMid, state);
+                    }
+                  } catch (e) {
+                    logger.error('Direct fetch of blob URL failed during redownload: ' + (e?.message || e));
+                  }
+                }
+              } else {
+                await tel_download_video(found, itemMid || undefined);
+                if (itemMid) {
+                  state.items[itemMid] = true;
+                  if (albumMid) setAlbumState(albumMid, state);
+                }
               }
             } catch (e) {
               logger.error('Redownload video (viewer) failed: ' + (e?.message || e));
@@ -1518,10 +1685,40 @@
             if (directSrc) {
               try {
                 logger.info('Falling back to direct src for redownload: ' + directSrc);
-                await tel_download_video(directSrc, itemMid || undefined);
-                if (itemMid) {
-                  state.items[itemMid] = true;
-                  if (albumMid) setAlbumState(albumMid, state);
+                if (directSrc.startsWith('blob:')) {
+                  logger.info('Direct src is a blob: URL; attempting viewer download or direct fetch');
+                  const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
+                  if (viewerDownloadBtn) {
+                    try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
+                  } else {
+                    try {
+                      const resp = await fetch(directSrc);
+                      const fetchedBlob = await resp.blob();
+                      const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
+                      const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
+                      const fileName = (itemMid ? sanitizeFilename(itemMid) : 'video') + '.' + ext;
+                      const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
+                      const a = document.createElement('a');
+                      document.body.appendChild(a);
+                      a.href = blobUrl2;
+                      a.download = fileName;
+                      a.click();
+                      document.body.removeChild(a);
+                      window.URL.revokeObjectURL(blobUrl2);
+                      if (itemMid) {
+                        state.items[itemMid] = true;
+                        if (albumMid) setAlbumState(albumMid, state);
+                      }
+                    } catch (e) {
+                      logger.error('Direct fetch of blob directSrc failed during redownload: ' + (e?.message || e));
+                    }
+                  }
+                } else {
+                  await tel_download_video(directSrc, itemMid || undefined);
+                  if (itemMid) {
+                    state.items[itemMid] = true;
+                    if (albumMid) setAlbumState(albumMid, state);
+                  }
                 }
               } catch (e) {
                 logger.error('Fallback redownload failed for: ' + directSrc + ' - ' + (e?.message || e));
@@ -1570,9 +1767,10 @@
         // Look for album, single-message (group-first), or single-message (group-last) elements
         let album = document.querySelector('.is-album[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-first[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-last[data-mid="' + albumMid + '"]');
         // Fallback: the element with data-mid might *contain* a child marked .is-group-first/.is-group-last
+        // or simply contain media elements — treat that as an album to restore badge
         if (!album) {
           const candidate = document.querySelector('[data-mid="' + albumMid + '"]');
-          if (candidate && candidate.querySelector && candidate.querySelector('.is-group-first, .is-group-last')) album = candidate;
+          if (candidate && candidate.querySelector && (candidate.querySelector('.is-group-first, .is-group-last') || candidate.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item'))) album = candidate;
         }
         if (album) createBadgeForAlbum(album);
       }
@@ -1588,28 +1786,59 @@
     document.body.addEventListener('click', (e) => {
       try {
         const clicked = e.target;
-        // Accept clicks on images, canvases, videos, or the container around them
-        let target = clicked.closest && (clicked.closest('.media-photo') || clicked.closest('.canvas-thumbnail') || clicked.closest('.media-video') || clicked.closest('.media-container') || clicked.closest('.media-container-aspecter') || clicked.closest('.attachment'));
+        // Accept clicks on images, canvases, videos, play buttons, replies, or the container around them
+        let target = clicked.closest && (
+          clicked.closest('.media-photo') ||
+          clicked.closest('.canvas-thumbnail') ||
+          clicked.closest('.media-video') ||
+          clicked.closest('.media-container') ||
+          clicked.closest('.media-container-aspecter') ||
+          clicked.closest('.attachment') ||
+          clicked.closest('.video-play') ||
+          clicked.closest('.btn-circle.video-play') ||
+          clicked.closest('.reply') ||
+          clicked.closest('.reply-content') ||
+          clicked.closest('.reply-media') ||
+          clicked.closest('.album-item') ||
+          clicked.closest('.album-item-media')
+        );
         if (!target) return;
         // If the target is a container, find the actual media element inside it
         let media = null;
-        if (target.matches && target.matches('.media-photo, .canvas-thumbnail, .media-video')) {
+        if (target.matches && target.matches('.media-photo, .canvas-thumbnail, .media-video, .video-play, .btn-circle.video-play')) {
           media = target;
         } else if (target.querySelector) {
-          media = target.querySelector('.media-photo, .canvas-thumbnail, .media-video');
+          media = target.querySelector('.media-photo, .canvas-thumbnail, .media-video, .video-play, .btn-circle.video-play, .canvas-thumbnail');
         }
         if (!media) return;
 
         // Support multi-item albums (.is-album) and single messages marked with
         // .is-group-first or .is-group-last (single video/photo bubble in a grouped thread).
-        // Also handle cases where an ancestor with the same data-mid contains those markers.
+        // Also handle cases where an ancestor with the same data-mid contains those markers or media elements.
         let album =
           media.closest &&
           (media.closest('.is-album') || media.closest('.is-group-first') || media.closest('.is-group-last'));
+
         if (!album) {
+          // Prefer an ancestor that already has data-mid and media children
           const fallback = media.closest && media.closest('[data-mid]');
-          if (fallback && (fallback.querySelector && fallback.querySelector('.is-group-first, .is-group-last'))) album = fallback;
+          if (fallback && (fallback.querySelector && (fallback.querySelector('.is-group-first, .is-group-last') || fallback.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item')))) {
+            album = fallback;
+          }
         }
+
+        // If still not found, accept a bubble ancestor that carries data-mid or contains media
+        if (!album && media.closest) {
+          const bubbleAnc = media.closest('.bubble[data-mid]');
+          if (bubbleAnc) album = bubbleAnc;
+        }
+
+        // Final fallback: any ancestor with data-mid that contains media
+        if (!album && media.closest) {
+          const anyMid = media.closest('[data-mid]');
+          if (anyMid && anyMid.querySelector && anyMid.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item')) album = anyMid;
+        }
+
         if (!album) return;
 
         const albumMid = album.getAttribute && album.getAttribute('data-mid');
@@ -1652,8 +1881,8 @@
         // Handle attribute changes (e.g., data-mid or class added later)
         if (m.type === 'attributes' && m.target instanceof Element) {
           const el = m.target;
-          // Element itself matches, or it contains a child that marks it as a group-first/last
-          if (el.matches && (el.matches('.is-album') || el.matches('.is-group-first') || el.matches('.is-group-last') || (el.querySelector && el.querySelector('.is-group-first, .is-group-last')))) {
+          // Element itself matches, or it contains a child that marks it as a group-first/last, or contains media nodes
+          if (el.matches && (el.matches('.is-album') || el.matches('.is-group-first') || el.matches('.is-group-last') || (el.querySelector && (el.querySelector('.is-group-first, .is-group-last') || el.querySelector('.video-time, .media-photo, .media-video, .canvas-thumbnail, .attachment, .album-item'))))) {
             const albumMid = el.getAttribute('data-mid');
             if (albumMid) {
               const key = `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`;
