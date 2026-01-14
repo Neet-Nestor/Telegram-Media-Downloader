@@ -245,12 +245,17 @@
     title.innerText = fileName;
 
     const closeButton = document.createElement("div");
-    closeButton.style.cursor = "pointer";
+    closeButton.className = "tel-progress-close";
     closeButton.style.fontSize = "1.2rem";
-    closeButton.style.color = isDarkMode ? "#8a8a8a" : "white";
+    closeButton.style.color = isDarkMode ? "#4a4a4a" : "#888";
+    closeButton.style.cursor = "not-allowed";
+    closeButton.style.opacity = "0.5";
     closeButton.innerHTML = "&times;";
     closeButton.onclick = function () {
-      container.removeChild(innerContainer);
+      // Only allow close if download is completed or aborted
+      if (closeButton.dataset.canClose === "true") {
+        container.removeChild(innerContainer);
+      }
     };
 
     const progressBar = document.createElement("div");
@@ -289,6 +294,10 @@
     const innerContainer = document.getElementById(
       "tel-downloader-progress-" + videoId
     );
+    if (!innerContainer) {
+      logger.info(`Progress UI closed but download continues: ${progress}%`, fileName);
+      return;
+    }
     innerContainer.querySelector("p.filename").innerText = fileName;
     const progressBar = innerContainer.querySelector("div.progress");
     progressBar.querySelector("p").innerText = progress + "%";
@@ -305,18 +314,21 @@
     progressBar.querySelector("div").style.backgroundColor = "#B6C649";
     progressBar.querySelector("div").style.width = "100%";
 
+    // Enable close button
+    const closeBtn = container.querySelector(".tel-progress-close");
+    if (closeBtn) {
+      closeBtn.dataset.canClose = "true";
+      closeBtn.style.cursor = "pointer";
+      closeBtn.style.opacity = "1";
+      const isDarkMode = document.querySelector("html").classList.contains("night") || document.querySelector("html").classList.contains("theme-dark");
+      closeBtn.style.color = isDarkMode ? "#8a8a8a" : "white";
+    }
+
     const r = downloadCompletionResolvers.get(videoId);
     if (r && r.resolve) {
       r.resolve();
       downloadCompletionResolvers.delete(videoId);
     }
-
-    // Remove the progress UI after a short delay so users can see completion
-    setTimeout(() => {
-      try {
-        container.remove();
-      } catch (e) {}
-    }, 800);
   };
 
   const AbortProgress = (videoId, err) => {
@@ -326,6 +338,16 @@
     progressBar.querySelector("p").innerText = "Aborted";
     progressBar.querySelector("div").style.backgroundColor = "#D16666";
     progressBar.querySelector("div").style.width = "100%";
+
+    // Enable close button
+    const closeBtn = container.querySelector(".tel-progress-close");
+    if (closeBtn) {
+      closeBtn.dataset.canClose = "true";
+      closeBtn.style.cursor = "pointer";
+      closeBtn.style.opacity = "1";
+      const isDarkMode = document.querySelector("html").classList.contains("night") || document.querySelector("html").classList.contains("theme-dark");
+      closeBtn.style.color = isDarkMode ? "#8a8a8a" : "white";
+    }
 
     // Add retry button below the progress bar
     const existingRetry = container.querySelector('.tel-retry-button');
