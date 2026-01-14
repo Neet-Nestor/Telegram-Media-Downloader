@@ -129,22 +129,43 @@
     progressBar.querySelector("div").style.width = progress + "%";
   };
 
+  const downloadCompletionResolvers = new Map();
+
   const completeProgress = (videoId) => {
-    const progressBar = document
-      .getElementById("tel-downloader-progress-" + videoId)
-      .querySelector("div.progress");
+    const container = document.getElementById("tel-downloader-progress-" + videoId);
+    if (!container) return;
+    const progressBar = container.querySelector("div.progress");
     progressBar.querySelector("p").innerText = "Completed";
     progressBar.querySelector("div").style.backgroundColor = "#B6C649";
     progressBar.querySelector("div").style.width = "100%";
+
+    const r = downloadCompletionResolvers.get(videoId);
+    if (r && r.resolve) {
+      r.resolve();
+      downloadCompletionResolvers.delete(videoId);
+    }
+
+    // Remove the progress UI after a short delay so users can see completion
+    setTimeout(() => {
+      try {
+        container.remove();
+      } catch (e) {}
+    }, 800);
   };
 
-  const AbortProgress = (videoId) => {
+  const AbortProgress = (videoId, err) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
       .querySelector("div.progress");
     progressBar.querySelector("p").innerText = "Aborted";
     progressBar.querySelector("div").style.backgroundColor = "#D16666";
     progressBar.querySelector("div").style.width = "100%";
+
+    const r = downloadCompletionResolvers.get(videoId);
+    if (r && r.reject) {
+      r.reject(err || new Error('Aborted'));
+      downloadCompletionResolvers.delete(videoId);
+    }
   };
 
   const tel_download_video = (url) => {
@@ -158,6 +179,11 @@
       "_" +
       Date.now().toString();
     let fileName = hashCode(url).toString(36) + "." + _file_extension;
+
+    // Promise that resolves when download completes (or rejects on abort)
+    const completionPromise = new Promise((resolve, reject) => {
+      downloadCompletionResolvers.set(videoId, { resolve, reject });
+    });
 
     // Some video src is in format:
     // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
@@ -307,17 +333,21 @@
             })
             .catch((err) => {
               console.error(err.name, err.message);
+              AbortProgress(videoId, err);
             });
         })
         .catch((err) => {
           if (err.name !== "AbortError") {
             console.error(err.name, err.message);
+            AbortProgress(videoId, err);
           }
         });
     } else {
       fetchNextPart(null);
       createProgressBar(videoId);
     }
+
+    return completionPromise;
   };
 
   const tel_download_audio = (url) => {
@@ -477,6 +507,7 @@
     document.body.removeChild(a);
 
     logger.info("Download triggered", fileName);
+    return Promise.resolve();
   };
 
   logger.info("Initialized");
@@ -960,11 +991,15 @@
 
             if (src) {
               logger.info('Downloading media: ' + src);
-              tel_download_video(src);
-              if (itemMid) {
-                state.items = state.items || {};
-                state.items[itemMid] = true;
-                if (albumMid) setAlbumState(albumMid, state);
+              try {
+                await tel_download_video(src);
+                if (itemMid) {
+                  state.items = state.items || {};
+                  state.items[itemMid] = true;
+                  if (albumMid) setAlbumState(albumMid, state);
+                }
+              } catch (e) {
+                logger.error('Download failed for: ' + src + ' - ' + (e?.message || e));
               }
               await new Promise((r) => setTimeout(r, 300));
               continue;
@@ -977,69 +1012,96 @@
             telSuppressMediaError = true;
 
             try {
-              try {
-                opener.click();
-              } catch (e) {
-                logger.info('Opener click failed: ' + (e?.message || e));
-              }
-
-              const timeout = 8000;
-              const start = Date.now();
+              // Attempt to start playback in-item if there's a play button to encourage the stream to start
+              const playBtn = item.querySelector('.video-play, .btn-circle.video-play, .btn-circle.video-play.position-center, .toggle');
+              const maxAttempts = 3;
+              const baseTimeout = 12000; // ms
               let found = null;
-              try {
-                while (Date.now() - start < timeout) {
-                  const v = document.querySelector('#MediaViewer .MediaViewerSlide--active video, .media-viewer-whole video, video.media-video, .ckin__player video');
-                  if (v) {
-                    v.addEventListener('error', () => {
-                      (async () => {
-                        try {
-                          const url = v.currentSrc || v.src;
-                          if (!url) {
-                            if (!telSuppressMediaError) logger.info('Video element reported an error with no src while probing viewer');
-                            return;
-                          }
 
-                          // Try HEAD to see if URL returns HTML (service worker) or media
-                          let contentType = null;
-                          try {
-                            const headRes = await fetch(url, { method: 'HEAD' });
-                            contentType = headRes.headers.get('Content-Type') || '';
-                          } catch (e) {
-                            // HEAD may fail due to CORS or service worker; only log when suppression is off
-                            if (!telSuppressMediaError) logger.info('HEAD check failed for ' + url + ': ' + (e?.message || e));
-                          }
-
-                          if (contentType && contentType.indexOf('text/html') === 0) {
-                            // Non-media response (HTML) — skip silently when suppressed
-                            if (!telSuppressMediaError) logger.info('Viewer returned HTML, skipping video src: ' + url);
-                            return;
-                          }
-
-                          // Not an obvious HTML response — log only if suppression is disabled
-                          if (!telSuppressMediaError) logger.info('Video element error while probing viewer for: ' + url + ' (Content-Type: ' + (contentType || 'unknown') + ')');
-                        } catch (e) {
-                          logger.error('Error in video error handler: ' + (e?.message || e));
-                        }
-                      })();
-                    }, { once: true });
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                  if (playBtn) {
+                    try {
+                      playBtn.click();
+                      logger.info('Clicked in-item play button (attempt ' + attempt + ')');
+                    } catch (e) {
+                      logger.info('Play button click failed: ' + (e?.message || e));
+                    }
                   }
 
-                  const s = v && (v.currentSrc || v.src);
-                  if (s) {
-                    found = s;
-                    break;
+                  try {
+                    opener.click();
+                  } catch (e) {
+                    logger.info('Opener click failed: ' + (e?.message || e));
                   }
 
-                  const streamLink = document.querySelector('#MediaViewer a[href*="stream/"]')?.href || document.querySelector('.media-viewer-whole a[href*="stream/"]')?.href;
-                  if (streamLink) {
-                    found = streamLink;
-                    break;
+                  const timeout = baseTimeout;
+                  const start = Date.now();
+
+                  try {
+                    while (Date.now() - start < timeout) {
+                      const v = document.querySelector('#MediaViewer .MediaViewerSlide--active video, .media-viewer-whole video, video.media-video, .ckin__player video');
+                      if (v) {
+                        v.addEventListener('error', () => {
+                          (async () => {
+                            try {
+                              const url = v.currentSrc || v.src;
+                              if (!url) {
+                                if (!telSuppressMediaError) logger.info('Video element reported an error with no src while probing viewer');
+                                return;
+                              }
+
+                              // Try HEAD to see if URL returns HTML (service worker) or media
+                              let contentType = null;
+                              try {
+                                const headRes = await fetch(url, { method: 'HEAD' });
+                                contentType = headRes.headers.get('Content-Type') || '';
+                              } catch (e) {
+                                if (!telSuppressMediaError) logger.info('HEAD check failed for ' + url + ': ' + (e?.message || e));
+                              }
+
+                              if (contentType && contentType.indexOf('text/html') === 0) {
+                                if (!telSuppressMediaError) logger.info('Viewer returned HTML, skipping video src: ' + url);
+                                return;
+                              }
+
+                              if (!telSuppressMediaError) logger.info('Video element error while probing viewer for: ' + url + ' (Content-Type: ' + (contentType || 'unknown') + ')');
+                            } catch (e) {
+                              logger.error('Error in video error handler: ' + (e?.message || e));
+                            }
+                          })();
+                        }, { once: true });
+                      }
+
+                      const s = v && (v.currentSrc || v.src);
+                      if (s) {
+                        found = s;
+                        break;
+                      }
+
+                      const streamLink = document.querySelector('#MediaViewer a[href*="stream/"]')?.href || document.querySelector('.media-viewer-whole a[href*="stream/"]')?.href;
+                      if (streamLink) {
+                        found = streamLink;
+                        break;
+                      }
+
+                      await new Promise((r) => setTimeout(r, 200));
+                    }
+                  } catch (e) {
+                    logger.error('Error while probing viewer: ' + (e?.message || e));
                   }
 
-                  await new Promise((r) => setTimeout(r, 200));
+                  if (found) break; // success
+
+                  // retry backoff if not found
+                  if (attempt < maxAttempts) {
+                    const backoff = 500 * attempt;
+                    logger.info('Viewer probe no result, retrying after ' + backoff + 'ms (attempt ' + (attempt + 1) + ')');
+                    await new Promise((r) => setTimeout(r, backoff));
+                  }
+                } catch (e) {
+                  logger.error('Unexpected error in probe attempt: ' + (e?.message || e));
                 }
-              } catch (e) {
-                logger.error('Error while probing viewer: ' + (e?.message || e));
               }
 
               if (found) {
@@ -1058,11 +1120,15 @@
                   } else {
                     if (!(state.items && state.items[itemMid])) {
                       logger.info('Found video in viewer, starting download: ' + found);
-                      tel_download_video(found);
-                      if (itemMid) {
-                        state.items = state.items || {};
-                        state.items[itemMid] = true;
-                        if (albumMid) setAlbumState(albumMid, state);
+                      try {
+                        await tel_download_video(found);
+                        if (itemMid) {
+                          state.items = state.items || {};
+                          state.items[itemMid] = true;
+                          if (albumMid) setAlbumState(albumMid, state);
+                        }
+                      } catch (e) {
+                        logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
                       }
                     } else {
                       logger.info('Skipping already downloaded item (by mid) while processing found video');
