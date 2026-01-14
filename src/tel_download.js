@@ -293,8 +293,13 @@
     }
     innerContainer.querySelector("p.filename").innerText = fileName;
     const progressBar = innerContainer.querySelector("div.progress");
-    progressBar.querySelector("p").innerText = progress + "%";
-    progressBar.querySelector("div").style.width = progress + "%";
+    const pct = parseInt(progress, 10);
+    progressBar.querySelector("p").innerText = pct + "%";
+    progressBar.querySelector("div").style.width = pct + "%";
+    if (pct >= 100) {
+      // Treat 100% as completion and trigger completion handler
+      completeProgress(videoId);
+    }
   };
 
   const downloadCompletionResolvers = new Map();
@@ -322,6 +327,14 @@
       r.resolve();
       downloadCompletionResolvers.delete(videoId);
     }
+
+    // Auto-close completed progress after a short delay
+    setTimeout(() => {
+      try {
+        const c = document.getElementById("tel-downloader-progress-" + videoId);
+        if (c && c.parentNode) c.parentNode.removeChild(c);
+      } catch (e) {}
+    }, 2000);
   };
 
   const AbortProgress = (videoId, err) => {
@@ -342,41 +355,10 @@
       closeBtn.style.color = isDarkMode ? "#8a8a8a" : "white";
     }
 
-    // Add retry button below the progress bar
-    const existingRetry = container.querySelector('.tel-retry-button');
-    if (!existingRetry) {
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'tel-retry-button';
-      retryBtn.innerText = 'Retry';
-      retryBtn.style.marginTop = '0.5rem';
-      retryBtn.style.padding = '0.4rem 1rem';
-      retryBtn.style.backgroundColor = '#6093B5';
-      retryBtn.style.color = 'white';
-      retryBtn.style.border = 'none';
-      retryBtn.style.borderRadius = '0.4rem';
-      retryBtn.style.cursor = 'pointer';
-      retryBtn.style.width = '100%';
-      retryBtn.style.fontSize = '0.9rem';
-      retryBtn.onclick = () => {
-        // Remove the aborted progress container
-        try {
-          container.remove();
-        } catch (e) {}
-        // Retry download by calling tel_download_video with stored URL if available
-        const r = downloadCompletionResolvers.get(videoId);
-        if (r && r.retryUrl && r.retryHint !== undefined) {
-          logger.info('Retrying download for: ' + r.retryUrl);
-          tel_download_video(r.retryUrl, r.retryHint);
-        }
-        downloadCompletionResolvers.delete(videoId);
-      };
-      container.appendChild(retryBtn);
-    }
-
     const r = downloadCompletionResolvers.get(videoId);
     if (r && r.reject) {
       r.reject(err || new Error('Aborted'));
-      // Don't delete immediately so retry button can access stored URL
+      downloadCompletionResolvers.delete(videoId);
     }
   };
 
@@ -399,7 +381,7 @@
 
     // Promise that resolves when download completes (or rejects on abort)
     const completionPromise = new Promise((resolve, reject) => {
-      downloadCompletionResolvers.set(videoId, { resolve, reject, retryUrl: url, retryHint: filenameHint });
+      downloadCompletionResolvers.set(videoId, { resolve, reject });
     });
 
     // Try to extract embedded filename from URL metadata if present
@@ -467,16 +449,6 @@
           _next_offset = endOffset + 1;
           _total_size = totalSize;
 
-          logger.info(
-            `Get response: ${res.headers.get(
-              "Content-Length"
-            )} bytes data from ${res.headers.get("Content-Range")}`,
-            fileName
-          );
-          logger.info(
-            `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`,
-            fileName
-          );
           updateProgress(
             videoId,
             fileName,
@@ -506,7 +478,6 @@
             } else {
               save();
             }
-            completeProgress(videoId);
           }
         })
         .catch((reason) => {
@@ -533,6 +504,8 @@
       window.URL.revokeObjectURL(blobUrl);
 
       logger.info("Download triggered", fileName);
+
+      completeProgress(videoId);
     };
 
     const supportsFileSystemAccess =
