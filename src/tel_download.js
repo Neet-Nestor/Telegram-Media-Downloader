@@ -985,6 +985,11 @@
       badge.style.color = 'white';
       badge.style.border = 'none';
       badge.style.cursor = 'pointer';
+      badge.style.display = 'inline-flex';
+      badge.style.alignItems = 'center';
+      badge.style.justifyContent = 'center';
+      badge.style.whiteSpace = 'nowrap';
+      badge.style.boxSizing = 'border-box';
       badge.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
 
       // create wrapper and append badge into it
@@ -1028,7 +1033,8 @@
               red.style.borderRadius = cs.borderRadius || '12px';
               red.style.fontSize = cs.fontSize || '0.9rem';
               red.style.lineHeight = cs.lineHeight || '1';
-              red.style.height = cs.height || 'auto';
+              // Only set explicit height if computed height is pixels (avoid % or auto which can stretch)
+              if (/^\d+px$/.test(cs.height)) red.style.height = cs.height;
               red.style.display = 'inline-flex';
               red.style.alignItems = 'center';
               red.style.justifyContent = 'center';
@@ -1347,8 +1353,7 @@
         badge.disabled = false;
       });
 
-      album.appendChild(badge);
-      // Ensure redownload UI is present when appropriate
+      // Badge already appended inside wrapper; ensure redownload UI is present when appropriate
       ensureRedownloadButton();
       return badge;
     } catch (e) {
