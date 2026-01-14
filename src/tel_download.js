@@ -102,9 +102,9 @@
     if (filenameFromCd) candidates.push(sanitizeFilename(filenameFromCd));
     const blobId = extractBlobIdFromUrl(url);
     if (blobId) candidates.push(sanitizeFilename(blobId));
-    candidates.push(hashCode(url).toString(36));
 
-    const base = candidates.find(Boolean) || 'file';
+    const base = candidates.find(Boolean);
+    if (!base) throw new Error('No filename could be determined (no hint, mid, or blob ID)');
     const finalExt = ext || 'bin';
     const finalName = base + '.' + finalExt;
 
@@ -153,13 +153,6 @@
 
           // Wait for viewer to open and stabilize
           await new Promise((r) => setTimeout(r, 500));
-
-          // Try to use the viewer's native download button directly - it has the correct URL
-          const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
-          if (viewerDownloadBtn) {
-            logger.info('Found viewer download button, will click it directly instead of probing src');
-            return { url: 'USE_VIEWER_BUTTON', contentType: null, button: viewerDownloadBtn };
-          }
 
           const start = Date.now();
           while (Date.now() - start < timeout) {
@@ -424,7 +417,9 @@
       const blobId = extractBlobIdFromUrl(url);
       if (blobId) baseName = sanitizeFilename(blobId);
     }
-    if (!baseName && !fileName) baseName = hashCode(url).toString(36);
+    if (!fileName && !baseName) {
+      throw new Error('No filename could be determined for video (no hint, metadata, or blob ID)');
+    }
     if (!fileName) fileName = baseName + "." + _file_extension;
 
     logger.info(`URL: ${url}`, fileName);
@@ -584,7 +579,11 @@
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
-    const fileName = hashCode(url).toString(36) + ".ogg";
+    const blobId = extractBlobIdFromUrl(url);
+    if (!blobId) {
+      throw new Error('No filename could be determined for audio (no blob ID)');
+    }
+    const fileName = sanitizeFilename(blobId) + ".ogg";
 
     const fetchNextPart = (_writable) => {
       fetch(url, {
@@ -756,7 +755,11 @@
       }
     } catch (e) {}
 
-    const fileName = filenameHint ? sanitizeFilename(filenameHint) + '.' + ext : (Math.random() + 1).toString(36).substring(2, 10) + '.' + ext;
+    const blobId = extractBlobIdFromUrl(imageUrl);
+    if (!filenameHint && !blobId) {
+      throw new Error('No filename could be determined for image (no hint or blob ID)');
+    }
+    const fileName = filenameHint ? sanitizeFilename(filenameHint) + '.' + ext : sanitizeFilename(blobId) + '.' + ext;
 
     const a = document.createElement('a');
     document.body.appendChild(a);
@@ -809,13 +812,15 @@
             video?.currentSrc ||
             video?.querySelector("source")?.src;
           if (videoSrc) {
-            tel_download_video(videoSrc);
+            const dataMid = storiesContainer.getAttribute('data-mid') || storiesContainer.closest('[data-mid]')?.getAttribute('data-mid');
+            tel_download_video(videoSrc, dataMid);
           } else {
             // 2. Story with image
             const images = storiesContainer.querySelectorAll("img.PVZ8TOWS");
             if (images.length > 0) {
               const imageSrc = images[images.length - 1]?.src;
-              if (imageSrc) tel_download_image(imageSrc);
+              const dataMid = storiesContainer.getAttribute('data-mid') || storiesContainer.closest('[data-mid]')?.getAttribute('data-mid');
+              if (imageSrc) tel_download_image(imageSrc, dataMid);
             }
           }
         };
@@ -863,7 +868,8 @@
       downloadButton.setAttribute("data-tel-download-url", videoUrl);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
-        tel_download_video(videoPlayer.querySelector("video").currentSrc);
+        const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
+        tel_download_video(videoPlayer.querySelector("video").currentSrc, dataMid);
       };
 
       // Add download button to video controls
@@ -892,7 +898,8 @@
         ) {
           // Update existing button
           telDownloadButton.onclick = () => {
-            tel_download_video(videoPlayer.querySelector("video").currentSrc);
+            const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
+            tel_download_video(videoPlayer.querySelector("video").currentSrc, dataMid);
           };
           telDownloadButton.setAttribute("data-tel-download-url", videoUrl);
         }
@@ -906,7 +913,8 @@
       downloadButton.setAttribute("data-tel-download-url", img.src);
       downloadButton.appendChild(downloadIcon);
       downloadButton.onclick = () => {
-        tel_download_image(img.src);
+        const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
+        tel_download_image(img.src, dataMid);
       };
 
       // Add/Update/Remove download button to topbar
@@ -925,7 +933,8 @@
         ) {
           // Update existing button
           telDownloadButton.onclick = () => {
-            tel_download_image(img.src);
+            const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
+            tel_download_image(img.src, dataMid);
           };
           telDownloadButton.setAttribute("data-tel-download-url", img.src);
         }
@@ -1003,12 +1012,14 @@
             video?.currentSrc ||
             video?.querySelector("source")?.src;
           if (videoSrc) {
-            tel_download_video(videoSrc);
+            const dataMid = storiesContainer.getAttribute('data-mid') || storiesContainer.closest('[data-mid]')?.getAttribute('data-mid');
+            tel_download_video(videoSrc, dataMid);
           } else {
             // 2. Story with image
             const imageSrc =
               storiesContainer.querySelector("img.media-photo")?.src;
-            if (imageSrc) tel_download_image(imageSrc);
+            const dataMid = storiesContainer.getAttribute('data-mid') || storiesContainer.closest('[data-mid]')?.getAttribute('data-mid');
+            if (imageSrc) tel_download_image(imageSrc, dataMid);
           }
         };
         return downloadButton;
@@ -1081,7 +1092,8 @@
           downloadButton.onclick = onDownload;
         } else {
           downloadButton.onclick = () => {
-            tel_download_video(mediaAspecter.querySelector("video").src);
+            const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
+            tel_download_video(mediaAspecter.querySelector("video").src, dataMid);
           };
         }
         brControls.prepend(downloadButton);
@@ -1103,7 +1115,8 @@
         downloadButton.onclick = onDownload;
       } else {
         downloadButton.onclick = () => {
-          tel_download_video(mediaAspecter.querySelector("video").src);
+          const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
+          tel_download_video(mediaAspecter.querySelector("video").src, dataMid);
         };
       }
       mediaButtons.prepend(downloadButton);
@@ -1126,7 +1139,8 @@
         downloadButton.onclick = onDownload;
       } else {
         downloadButton.onclick = () => {
-          tel_download_image(mediaAspecter.querySelector("img.thumbnail").src);
+          const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
+          tel_download_image(mediaAspecter.querySelector("img.thumbnail").src, dataMid);
         };
       }
       mediaButtons.prepend(downloadButton);
@@ -1425,17 +1439,6 @@
                 const found = probeRes.url;
                 const contentType = probeRes.contentType;
 
-                // If probe returned USE_VIEWER_BUTTON, click the viewer's download button directly
-                if (found === 'USE_VIEWER_BUTTON' && probeRes.button) {
-                  try {
-                    probeRes.button.click();
-                    logger.info('Clicked viewer download button for correct video');
-                    if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-                  } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
-                  await new Promise((r) => setTimeout(r, 200));
-                  continue;
-                }
-
                 if (contentType && contentType.indexOf('text/html') === 0) {
                   logger.info('Found URL returns text/html, skipping: ' + found);
                 } else {
@@ -1443,17 +1446,12 @@
                     logger.info('Found video in viewer, starting download: ' + found);
                     try {
                       if (typeof found === 'string' && found.startsWith('blob:')) {
-                        logger.info('Found blob: URL, attempting viewer download or direct fetch: ' + found);
-                        const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
-                        if (viewerDownloadBtn) {
-                          try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); } } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
-                        } else {
-                          try {
-                            const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
-                            logger.info('Saved blob resource as: ' + fileName);
-                            if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-                          } catch (e) { logger.error('Direct fetch of blob URL failed: ' + (e?.message || e)); }
-                        }
+                        logger.info('Found blob: URL, downloading with itemMid: ' + found);
+                        try {
+                          const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
+                          logger.info('Saved blob resource as: ' + fileName);
+                          if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
+                        } catch (e) { logger.error('Direct fetch of blob URL failed: ' + (e?.message || e)); }
                       } else {
                         await tel_download_video(found, itemMid || undefined);
                         if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
@@ -1473,18 +1471,13 @@
                   try {
                     logger.info('Falling back to direct src for download: ' + directSrc);
                     if (directSrc.startsWith('blob:')) {
-                      logger.info('Direct src is a blob: URL; attempting viewer download or direct fetch');
-                      const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
-                      if (viewerDownloadBtn) {
-                        try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); } } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
-                      } else {
-                        try {
-                          const fileName = await fetchAndSaveUrl(directSrc, { filenameHint: itemMid, itemMid });
-                          logger.info('Saved direct blob resource as: ' + fileName);
-                          if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-                        } catch (e) {
-                          logger.error('Direct fetch of blob directSrc failed: ' + (e?.message || e));
-                        }
+                      logger.info('Direct src is a blob: URL; downloading with itemMid');
+                      try {
+                        const fileName = await fetchAndSaveUrl(directSrc, { filenameHint: itemMid, itemMid });
+                        logger.info('Saved direct blob resource as: ' + fileName);
+                        if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
+                      } catch (e) {
+                        logger.error('Direct fetch of blob directSrc failed: ' + (e?.message || e));
                       }
                     } else {
                       await tel_download_video(directSrc, itemMid || undefined);
@@ -1685,36 +1678,20 @@
           if (probeRes && probeRes.url) {
             const found = probeRes.url;
 
-            // If probe returned USE_VIEWER_BUTTON, click the viewer's download button directly
-            if (found === 'USE_VIEWER_BUTTON' && probeRes.button) {
-              try {
-                probeRes.button.click();
-                logger.info('Clicked viewer download button for correct video (redownload)');
-                if (itemMid) { state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-              } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
-              await new Promise(r => setTimeout(r, 200));
-              continue;
-            }
-
             logger.info('Redownloading video (viewer): ' + found);
             try {
               if (typeof found === 'string' && found.startsWith('blob:')) {
-                logger.info('Found blob: URL in redownload; trying viewer download or direct fetch');
-                const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
-                if (viewerDownloadBtn) {
-                  try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
-                } else {
-                  try {
-                    const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
-                    logger.info('Saved redownloaded blob as: ' + fileName);
-                    if (itemMid) {
-                      state.items[itemMid] = state.items || {};
-                      state.items[itemMid] = true;
-                      if (albumMid) setAlbumState(albumMid, state);
-                    }
-                  } catch (e) {
-                    logger.error('Direct fetch of blob URL failed during redownload: ' + (e?.message || e));
+                logger.info('Found blob: URL in redownload; downloading with itemMid');
+                try {
+                  const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
+                  logger.info('Saved redownloaded blob as: ' + fileName);
+                  if (itemMid) {
+                    state.items[itemMid] = state.items || {};
+                    state.items[itemMid] = true;
+                    if (albumMid) setAlbumState(albumMid, state);
                   }
+                } catch (e) {
+                  logger.error('Direct fetch of blob URL failed during redownload: ' + (e?.message || e));
                 }
               } else {
                 await tel_download_video(found, itemMid || undefined);
@@ -1732,32 +1709,16 @@
               try {
                 logger.info('Falling back to direct src for redownload: ' + directSrc);
                 if (directSrc.startsWith('blob:')) {
-                  logger.info('Direct src is a blob: URL; attempting viewer download or direct fetch');
-                  const viewerDownloadBtn = document.querySelector('#MediaViewer button[title="Download"], #MediaViewer .MediaViewerActions button.tel-download, .media-viewer-whole button[title="Download"], .media-viewer-whole button.btn-icon.tgico-download');
-                  if (viewerDownloadBtn) {
-                    try { viewerDownloadBtn.click(); logger.info('Clicked viewer download button for blob resource'); } catch (e) { logger.error('Viewer download button click failed: ' + (e?.message || e)); }
-                  } else {
-                    try {
-                      const resp = await fetch(directSrc);
-                      const fetchedBlob = await resp.blob();
-                      const contentType2 = resp.headers.get('Content-Type') || fetchedBlob.type || 'video/mp4';
-                      const ext = (contentType2.split('/')[1] || 'mp4').split(';')[0];
-                      const fileName = (itemMid ? sanitizeFilename(itemMid) : 'video') + '.' + ext;
-                      const blobUrl2 = window.URL.createObjectURL(fetchedBlob);
-                      const a = document.createElement('a');
-                      document.body.appendChild(a);
-                      a.href = blobUrl2;
-                      a.download = fileName;
-                      a.click();
-                      document.body.removeChild(a);
-                      window.URL.revokeObjectURL(blobUrl2);
-                      if (itemMid) {
-                        state.items[itemMid] = true;
-                        if (albumMid) setAlbumState(albumMid, state);
-                      }
-                    } catch (e) {
-                      logger.error('Direct fetch of blob directSrc failed during redownload: ' + (e?.message || e));
+                  logger.info('Direct src is a blob: URL; downloading with itemMid');
+                  try {
+                    const fileName = await fetchAndSaveUrl(directSrc, { filenameHint: itemMid, itemMid });
+                    logger.info('Saved redownloaded blob (direct src) as: ' + fileName);
+                    if (itemMid) {
+                      state.items[itemMid] = true;
+                      if (albumMid) setAlbumState(albumMid, state);
                     }
+                  } catch (e) {
+                    logger.error('Direct fetch of blob directSrc failed during redownload: ' + (e?.message || e));
                   }
                 } else {
                   await tel_download_video(directSrc, itemMid || undefined);
