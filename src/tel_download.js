@@ -931,7 +931,8 @@
         if (albumMid) setAlbumState(albumMid, state);
       }
       if (existing) {
-        existing.innerText = state.status === 'downloaded' ? 'Downloaded' : 'Scanned';
+        const label = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
+        existing.innerText = label;
         return existing;
       }
 
@@ -948,9 +949,50 @@
       badge.style.color = 'white';
       badge.style.border = 'none';
       badge.style.cursor = 'pointer';
-      badge.innerText = state.status === 'downloaded' ? 'Downloaded' : 'Scanned';
+      badge.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
 
       const updateBadgeText = (s) => (badge.innerText = s);
+
+      // Ensure redownload button exists when album is partial or downloaded
+      const ensureRedownloadButton = () => {
+        try {
+          const existingR = badge.parentNode && badge.parentNode.querySelector('.tel-album-redownload');
+          if (existingR) existingR.remove();
+
+          if (state.status === 'downloaded' || state.status === 'partial') {
+            const red = document.createElement('button');
+            red.className = 'tel-album-redownload';
+            red.title = 'Redownload album';
+            red.style.marginLeft = '8px';
+            red.style.padding = '4px 8px';
+            red.style.borderRadius = '12px';
+            red.style.background = '#D16666';
+            red.style.color = 'white';
+            red.style.border = 'none';
+            red.style.cursor = 'pointer';
+            red.innerText = 'Redownload';
+
+            red.addEventListener('click', async (ev) => {
+              ev.stopPropagation();
+              red.disabled = true;
+              badge.disabled = true;
+              try {
+                await forceRedownloadAlbum(album, albumMid);
+              } catch (e) {
+                logger.error('Redownload album failed: ' + (e?.message || e));
+              } finally {
+                red.disabled = false;
+                badge.disabled = false;
+                ensureRedownloadButton();
+              }
+            });
+
+            badge.after(red);
+          }
+        } catch (e) {
+          logger.error('ensureRedownloadButton error: ' + (e?.message || e));
+        }
+      };
 
       badge.addEventListener('click', async (ev) => {
         ev.stopPropagation();
@@ -1204,19 +1246,155 @@
         }
 
         // Update album status
-        const total = album.querySelectorAll('.album-item.grouped-item').length;
+        const total = album.querySelectorAll('.album-item.grouped-item').length || albumItems.length;
         const downloaded = Object.keys(state.items || {}).length;
-        state.status = downloaded >= total ? 'downloaded' : 'scanned';
+        if (downloaded >= total) {
+          state.status = 'downloaded';
+        } else if (downloaded > 0) {
+          state.status = 'partial';
+        } else {
+          state.status = 'scanned';
+        }
         if (albumMid) setAlbumState(albumMid, state);
-        updateBadgeText(state.status === 'downloaded' ? 'Downloaded' : 'Scanned');
+        updateBadgeText(state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned'));
 
         badge.disabled = false;
       });
 
       album.appendChild(badge);
+      // Ensure redownload UI is present when appropriate
+      ensureRedownloadButton();
       return badge;
     } catch (e) {
       logger.error('createBadgeForAlbum error: ' + (e.message || e));
+    }
+  };
+
+  // Force redownload helper: re-download items regardless of storage and override only those re-downloaded
+  const forceRedownloadAlbum = async (album, albumMid) => {
+    try {
+      const state = albumMid ? getAlbumState(albumMid) : { status: null, items: {} };
+      state.items = state.items || {};
+
+      let albumItems = Array.from(album.querySelectorAll('.album-item.grouped-item'));
+      if (albumItems.length === 0) {
+        const attach = album.querySelector('.attachment, .album-item, .album-item-media, .media-container');
+        if (attach) albumItems = [attach];
+      }
+
+      for (const item of albumItems) {
+        const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || null;
+        const isVideo = !!item.querySelector('.video-time') || item.classList.contains('video') || album.classList.contains('video');
+
+        if (!isVideo) {
+          // Image — download immediately
+          const imgEl = item.querySelector('img') || item.querySelector('canvas.media-photo');
+          const bg = (item.style && item.style.backgroundImage) || getComputedStyle(item).backgroundImage;
+          const m = bg && bg.match(/url\(["']?(.*?)['"]?\)/);
+          const src = (imgEl && imgEl.src) || (m && m[1]);
+          if (src) {
+            logger.info('Redownloading image: ' + src);
+            try {
+              await tel_download_image(src);
+              if (itemMid) {
+                state.items[itemMid] = true;
+                if (albumMid) setAlbumState(albumMid, state);
+              }
+            } catch (e) {
+              logger.error('Redownload image failed: ' + (e?.message || e));
+            }
+          }
+          await new Promise(r => setTimeout(r, 200));
+          continue;
+        }
+
+        // Video — try direct src first
+        let src = item.querySelector('video')?.currentSrc || item.querySelector('video')?.src || item.querySelector('video source')?.src || item.querySelector('a')?.href || item.querySelector('[data-src]')?.getAttribute('data-src');
+        if (!src) {
+          const bg = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
+          const mm = bg && bg.match(/url\(["']?(.*?)['"]?\)/);
+          if (mm && mm[1]) src = mm[1];
+        }
+
+        if (src) {
+          logger.info('Redownloading video (direct): ' + src);
+          try {
+            await tel_download_video(src);
+            if (itemMid) {
+              state.items[itemMid] = true;
+              if (albumMid) setAlbumState(albumMid, state);
+            }
+          } catch (e) {
+            logger.error('Redownload video failed: ' + (e?.message || e));
+          }
+          await new Promise(r => setTimeout(r, 200));
+          continue;
+        }
+
+        // Otherwise open viewer and extract
+        telSuppressMediaError = true;
+        try {
+          const opener = item.querySelector('a') || item;
+          try { opener.click(); } catch (e) { logger.info('Opener click failed during redownload: ' + (e?.message || e)); }
+
+          const timeout = 12000; // wait longer for redownload
+          const start = Date.now();
+          let found = null;
+          while (Date.now() - start < timeout) {
+            const v = document.querySelector('#MediaViewer .MediaViewerSlide--active video, .media-viewer-whole video, video.media-video, .ckin__player video');
+            const s = v && (v.currentSrc || v.src);
+            if (s) {
+              try { found = new URL(s, location.href).href; } catch(e) { found = s; }
+              break;
+            }
+            const streamLink = document.querySelector('#MediaViewer a[href*="stream/"]')?.href || document.querySelector('.media-viewer-whole a[href*="stream/"]')?.href;
+            if (streamLink) { found = streamLink; break; }
+            await new Promise(r => setTimeout(r, 300));
+          }
+
+          if (found) {
+            logger.info('Redownloading video (viewer): ' + found);
+            try {
+              await tel_download_video(found);
+              if (itemMid) {
+                state.items[itemMid] = true;
+                if (albumMid) setAlbumState(albumMid, state);
+              }
+            } catch (e) {
+              logger.error('Redownload video (viewer) failed: ' + (e?.message || e));
+            }
+          } else {
+            logger.info('Redownload: unable to extract video URL within timeout');
+          }
+        } finally {
+          // close viewer
+          try {
+            const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
+            if (closeBtn) closeBtn.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+          } catch (e) {}
+          telSuppressMediaError = false;
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
+
+      // After redownloads, update album status (only modify items we changed above)
+      const total = album.querySelectorAll('.album-item.grouped-item').length || albumItems.length;
+      const downloaded = Object.keys(state.items || {}).filter(k => state.items[k] === true).length;
+      state.status = downloaded >= total ? 'downloaded' : (downloaded > 0 ? 'partial' : 'scanned');
+      if (albumMid) setAlbumState(albumMid, state);
+
+      // Update badge text
+      const b = album.querySelector('.tel-album-scanned-badge');
+      if (b) b.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
+      // Ensure redownload button remains when appropriate
+      if (b) {
+        const existingR = b.parentNode && b.parentNode.querySelector('.tel-album-redownload');
+        if (existingR) existingR.remove();
+        if (state.status === 'downloaded' || state.status === 'partial') createBadgeForAlbum(album);
+      }
+
+    } catch (e) {
+      logger.error('forceRedownloadAlbum error: ' + (e?.message || e));
     }
   };
 
