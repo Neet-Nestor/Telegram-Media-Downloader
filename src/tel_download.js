@@ -320,17 +320,48 @@
   };
 
   const AbortProgress = (videoId, err) => {
-    const progressBar = document
-      .getElementById("tel-downloader-progress-" + videoId)
-      .querySelector("div.progress");
+    const container = document.getElementById("tel-downloader-progress-" + videoId);
+    if (!container) return;
+    const progressBar = container.querySelector("div.progress");
     progressBar.querySelector("p").innerText = "Aborted";
     progressBar.querySelector("div").style.backgroundColor = "#D16666";
     progressBar.querySelector("div").style.width = "100%";
 
+    // Add retry button below the progress bar
+    const existingRetry = container.querySelector('.tel-retry-button');
+    if (!existingRetry) {
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'tel-retry-button';
+      retryBtn.innerText = 'Retry';
+      retryBtn.style.marginTop = '0.5rem';
+      retryBtn.style.padding = '0.4rem 1rem';
+      retryBtn.style.backgroundColor = '#6093B5';
+      retryBtn.style.color = 'white';
+      retryBtn.style.border = 'none';
+      retryBtn.style.borderRadius = '0.4rem';
+      retryBtn.style.cursor = 'pointer';
+      retryBtn.style.width = '100%';
+      retryBtn.style.fontSize = '0.9rem';
+      retryBtn.onclick = () => {
+        // Remove the aborted progress container
+        try {
+          container.remove();
+        } catch (e) {}
+        // Retry download by calling tel_download_video with stored URL if available
+        const r = downloadCompletionResolvers.get(videoId);
+        if (r && r.retryUrl && r.retryHint !== undefined) {
+          logger.info('Retrying download for: ' + r.retryUrl);
+          tel_download_video(r.retryUrl, r.retryHint);
+        }
+        downloadCompletionResolvers.delete(videoId);
+      };
+      container.appendChild(retryBtn);
+    }
+
     const r = downloadCompletionResolvers.get(videoId);
     if (r && r.reject) {
       r.reject(err || new Error('Aborted'));
-      downloadCompletionResolvers.delete(videoId);
+      // Don't delete immediately so retry button can access stored URL
     }
   };
 
@@ -353,7 +384,7 @@
 
     // Promise that resolves when download completes (or rejects on abort)
     const completionPromise = new Promise((resolve, reject) => {
-      downloadCompletionResolvers.set(videoId, { resolve, reject });
+      downloadCompletionResolvers.set(videoId, { resolve, reject, retryUrl: url, retryHint: filenameHint });
     });
 
     // Try to extract embedded filename from URL metadata if present
