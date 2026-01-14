@@ -890,32 +890,53 @@
     body.appendChild(container);
   })();
 
-  // Persistent album state helpers
-  const ALBUM_STORAGE_KEY = 'tel_album_states_v1';
-  const loadAlbumStates = () => {
+  // Persistent album state helpers (per-album keys)
+  const ALBUM_STORAGE_KEY_BASE = 'tel_album_states_v1';
+
+  // Migrate legacy aggregated storage key to per-album keys
+  const migrateAlbumStates = () => {
     try {
-      const raw = localStorage.getItem(ALBUM_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
+      const raw = localStorage.getItem(ALBUM_STORAGE_KEY_BASE);
+      if (!raw) return; // nothing to migrate
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        Object.keys(parsed).forEach((albumMid) => {
+          try {
+            localStorage.setItem(
+              `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`,
+              JSON.stringify(parsed[albumMid])
+            );
+          } catch (e) {
+            logger.error('Failed to migrate album state for ' + albumMid + ': ' + (e?.message || e));
+          }
+        });
+        // Remove legacy aggregated key after migrating
+        localStorage.removeItem(ALBUM_STORAGE_KEY_BASE);
+        logger.info('Migrated album states to per-album keys');
+      }
     } catch (e) {
-      logger.error('Failed to parse album states: ' + (e.message || e));
-      return {};
+      logger.error('Migration failed: ' + (e?.message || e));
     }
   };
-  const saveAlbumStates = (states) => {
-    try {
-      localStorage.setItem(ALBUM_STORAGE_KEY, JSON.stringify(states));
-    } catch (e) {
-      logger.error('Failed to save album states: ' + (e.message || e));
-    }
-  };
+
   const getAlbumState = (albumMid) => {
-    const states = loadAlbumStates();
-    return states[albumMid] || { status: null, items: {} };
+    try {
+      const key = `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`;
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : { status: null, items: {} };
+    } catch (e) {
+      logger.error('Failed to get album state: ' + (e?.message || e));
+      return { status: null, items: {} };
+    }
   };
+
   const setAlbumState = (albumMid, state) => {
-    const states = loadAlbumStates();
-    states[albumMid] = state;
-    saveAlbumStates(states);
+    try {
+      const key = `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`;
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch (e) {
+      logger.error('Failed to set album state: ' + (e?.message || e));
+    }
   };
 
   const createBadgeForAlbum = (album, initStatus = null) => {
@@ -933,16 +954,31 @@
       if (existing) {
         const label = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
         existing.innerText = label;
+        // Ensure it's inside a badge wrapper for proper layout
+        try {
+          let wrap = existing.parentNode;
+          if (!wrap || !wrap.classList || !wrap.classList.contains('tel-album-badge-wrap')) {
+            wrap = document.createElement('div');
+            wrap.className = 'tel-album-badge-wrap';
+            wrap.style.position = 'absolute';
+            wrap.style.top = '8px';
+            wrap.style.right = '8px';
+            wrap.style.zIndex = 9999;
+            wrap.style.display = 'flex';
+            wrap.style.alignItems = 'center';
+            wrap.style.gap = '8px';
+            try { existing.remove(); } catch (e) {}
+            wrap.appendChild(existing);
+            album.appendChild(wrap);
+          }
+        } catch (e) {}
         return existing;
       }
 
       const badge = document.createElement('button');
       badge.className = 'tel-album-scanned-badge';
       badge.title = 'Download album';
-      badge.style.position = 'absolute';
-      badge.style.top = '8px';
-      badge.style.right = '8px';
-      badge.style.zIndex = 9999;
+      // badge will be placed inside a wrapper for correct layout
       badge.style.padding = '4px 8px';
       badge.style.borderRadius = '12px';
       badge.style.background = '#6093B5';
@@ -951,7 +987,27 @@
       badge.style.cursor = 'pointer';
       badge.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
 
-      const updateBadgeText = (s) => (badge.innerText = s);
+      // create wrapper and append badge into it
+      const badgeWrap = document.createElement('div');
+      badgeWrap.className = 'tel-album-badge-wrap';
+      badgeWrap.style.position = 'absolute';
+      badgeWrap.style.top = '8px';
+      badgeWrap.style.right = '8px';
+      badgeWrap.style.zIndex = 9999;
+      badgeWrap.style.display = 'flex';
+      badgeWrap.style.alignItems = 'center';
+      badgeWrap.style.gap = '8px';
+      badgeWrap.appendChild(badge);
+      album.appendChild(badgeWrap);
+
+      const updateBadgeText = (s) => {
+        try {
+          badge.innerText = s;
+        } catch (e) {}
+        try {
+          if (typeof ensureRedownloadButton === 'function') ensureRedownloadButton();
+        } catch (e) {}
+      };
 
       // Ensure redownload button exists when album is partial or downloaded
       const ensureRedownloadButton = () => {
@@ -963,14 +1019,38 @@
             const red = document.createElement('button');
             red.className = 'tel-album-redownload';
             red.title = 'Redownload album';
-            red.style.marginLeft = '8px';
-            red.style.padding = '4px 8px';
-            red.style.borderRadius = '12px';
-            red.style.background = '#D16666';
-            red.style.color = 'white';
-            red.style.border = 'none';
-            red.style.cursor = 'pointer';
             red.innerText = 'Redownload';
+
+            // Copy computed styles from the main badge so the buttons match exactly
+            try {
+              const cs = window.getComputedStyle(badge);
+              red.style.padding = cs.padding || '4px 8px';
+              red.style.borderRadius = cs.borderRadius || '12px';
+              red.style.fontSize = cs.fontSize || '0.9rem';
+              red.style.lineHeight = cs.lineHeight || '1';
+              red.style.height = cs.height || 'auto';
+              red.style.display = 'inline-flex';
+              red.style.alignItems = 'center';
+              red.style.justifyContent = 'center';
+              red.style.whiteSpace = 'nowrap';
+              red.style.boxSizing = 'border-box';
+              red.style.marginLeft = '8px';
+              // color & background (red variant)
+              red.style.background = '#D16666';
+              red.style.color = cs.color || 'white';
+              red.style.border = 'none';
+              red.style.cursor = 'pointer';
+            } catch (e) {
+              // Fallback styles
+              red.style.marginLeft = '8px';
+              red.style.padding = badge.style.padding || '4px 8px';
+              red.style.borderRadius = badge.style.borderRadius || '12px';
+              red.style.background = '#D16666';
+              red.style.color = 'white';
+              red.style.border = 'none';
+              red.style.cursor = 'pointer';
+              red.style.display = 'inline-block';
+            }
 
             red.addEventListener('click', async (ev) => {
               ev.stopPropagation();
@@ -987,7 +1067,13 @@
               }
             });
 
-            badge.after(red);
+            // append red to same wrapper as the main badge for correct sizing and alignment
+            try {
+              const wrap = badge.parentNode && badge.parentNode.classList && badge.parentNode.classList.contains('tel-album-badge-wrap') ? badge.parentNode : null;
+              if (wrap) wrap.appendChild(red); else badge.after(red);
+            } catch (e) {
+              try { badge.after(red); } catch (e) {}
+            }
           }
         } catch (e) {
           logger.error('ensureRedownloadButton error: ' + (e?.message || e));
@@ -1015,36 +1101,22 @@
             continue;
           }
 
-          const isVideo = !!item.querySelector('.video-time') || item.classList.contains('video') || album.classList.contains('video');
+          // Detect video specifically by presence of .album-item-media .video-time as primary signal
+        // Identify video only when the album-item-media contains .video-time (primary signal)
+        const isVideo = !!item.querySelector('.album-item-media .video-time');
           if (isVideo) {
-            // try to find source
-            let src =
+            // try to find a direct source as a fallback, but DO NOT use it immediately — we want to open the player first
+            let directSrc =
               item.querySelector('video')?.currentSrc ||
               item.querySelector('video')?.src ||
               item.querySelector('video source')?.src ||
               item.querySelector('a')?.href ||
               item.querySelector('[data-src]')?.getAttribute('data-src');
 
-            if (!src) {
+            if (!directSrc) {
               const bg = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
               const m = bg && bg.match(/url\(["']?(.*?)['"]?\)/);
-              if (m && m[1]) src = m[1];
-            }
-
-            if (src) {
-              logger.info('Downloading media: ' + src);
-              try {
-                await tel_download_video(src);
-                if (itemMid) {
-                  state.items = state.items || {};
-                  state.items[itemMid] = true;
-                  if (albumMid) setAlbumState(albumMid, state);
-                }
-              } catch (e) {
-                logger.error('Download failed for: ' + src + ' - ' + (e?.message || e));
-              }
-              await new Promise((r) => setTimeout(r, 300));
-              continue;
+              if (m && m[1]) directSrc = m[1];
             }
 
             // open viewer to extract streaming url with robust handling
@@ -1160,7 +1232,7 @@
                   if (contentType && contentType.indexOf('text/html') === 0) {
                     logger.info('Found URL returns text/html, skipping: ' + found);
                   } else {
-                    if (!(state.items && state.items[itemMid])) {
+                    if (!(state.items && state.items[itemMid] === true)) {
                       logger.info('Found video in viewer, starting download: ' + found);
                       try {
                         await tel_download_video(found);
@@ -1179,9 +1251,23 @@
                 } catch (e) {
                   logger.error('Error processing found video URL: ' + (e?.message || e));
                 }
-                await new Promise((r) => setTimeout(r, 300));
+                await new Promise((r) => setTimeout(r, 200));
               } else {
                 logger.info('Unable to extract video URL from viewer within timeout');
+                // Fallback to direct src if probe failed
+                if (directSrc) {
+                  try {
+                    logger.info('Falling back to direct src for download: ' + directSrc);
+                    await tel_download_video(directSrc);
+                    if (itemMid) {
+                      state.items = state.items || {};
+                      state.items[itemMid] = true;
+                      if (albumMid) setAlbumState(albumMid, state);
+                    }
+                  } catch (e) {
+                    logger.error('Fallback download failed for: ' + directSrc + ' - ' + (e?.message || e));
+                  }
+                }
               }
             } finally {
               // Close viewer and remove handler
@@ -1284,7 +1370,8 @@
 
       for (const item of albumItems) {
         const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || null;
-        const isVideo = !!item.querySelector('.video-time') || item.classList.contains('video') || album.classList.contains('video');
+        // Identify video only when the album-item-media contains .video-time (primary signal)
+        const isVideo = !!item.querySelector('.album-item-media .video-time');
 
         if (!isVideo) {
           // Image — download immediately
@@ -1308,27 +1395,12 @@
           continue;
         }
 
-        // Video — try direct src first
-        let src = item.querySelector('video')?.currentSrc || item.querySelector('video')?.src || item.querySelector('video source')?.src || item.querySelector('a')?.href || item.querySelector('[data-src]')?.getAttribute('data-src');
-        if (!src) {
+        // Video — open the viewer first and probe for a stream; fall back to direct src if probing fails
+        let directSrc = item.querySelector('video')?.currentSrc || item.querySelector('video')?.src || item.querySelector('video source')?.src || item.querySelector('a')?.href || item.querySelector('[data-src]')?.getAttribute('data-src');
+        if (!directSrc) {
           const bg = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
           const mm = bg && bg.match(/url\(["']?(.*?)['"]?\)/);
-          if (mm && mm[1]) src = mm[1];
-        }
-
-        if (src) {
-          logger.info('Redownloading video (direct): ' + src);
-          try {
-            await tel_download_video(src);
-            if (itemMid) {
-              state.items[itemMid] = true;
-              if (albumMid) setAlbumState(albumMid, state);
-            }
-          } catch (e) {
-            logger.error('Redownload video failed: ' + (e?.message || e));
-          }
-          await new Promise(r => setTimeout(r, 200));
-          continue;
+          if (mm && mm[1]) directSrc = mm[1];
         }
 
         // Otherwise open viewer and extract
@@ -1365,6 +1437,18 @@
             }
           } else {
             logger.info('Redownload: unable to extract video URL within timeout');
+            if (directSrc) {
+              try {
+                logger.info('Falling back to direct src for redownload: ' + directSrc);
+                await tel_download_video(directSrc);
+                if (itemMid) {
+                  state.items[itemMid] = true;
+                  if (albumMid) setAlbumState(albumMid, state);
+                }
+              } catch (e) {
+                logger.error('Fallback redownload failed for: ' + directSrc + ' - ' + (e?.message || e));
+              }
+            }
           }
         } finally {
           // close viewer
@@ -1398,14 +1482,20 @@
     }
   };
 
-  // Load existing badges from storage on start
+  // Load existing badges from storage on start (scan per-album keys)
   const loadSavedBadges = () => {
-    const states = loadAlbumStates();
-    Object.keys(states).forEach((albumMid) => {
-      // Look for both album and single-message (group-first) elements
-      const album = document.querySelector('.is-album[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-first[data-mid="' + albumMid + '"]');
-      if (album) createBadgeForAlbum(album);
-    });
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith(ALBUM_STORAGE_KEY_BASE + '_')) continue;
+        const albumMid = key.substring((ALBUM_STORAGE_KEY_BASE + '_').length);
+        // Look for both album and single-message (group-first) elements
+        const album = document.querySelector('.is-album[data-mid="' + albumMid + '"]') || document.querySelector('.is-group-first[data-mid="' + albumMid + '"]');
+        if (album) createBadgeForAlbum(album);
+      }
+    } catch (e) {
+      logger.error('loadSavedBadges error: ' + (e?.message || e));
+    }
   };
 
   // Album scanning & badge download feature
@@ -1439,38 +1529,45 @@
 
     loadSavedBadges();
 
-    // Observe DOM for new albums and restore badge if saved state exists
+    // Observe DOM for new albums and restore badge if saved state exists (per-album keys)
     const observer = new MutationObserver((mutations) => {
-      const states = loadAlbumStates();
       for (const m of mutations) {
         // Handle newly added nodes
         for (const node of m.addedNodes) {
           if (!(node instanceof Element)) continue;
+          const checkAndCreate = (el) => {
+            const albumMid = el.getAttribute && el.getAttribute('data-mid');
+            if (!albumMid) return;
+            const key = `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`;
+            if (localStorage.getItem(key)) createBadgeForAlbum(el);
+          };
+
           if (node.matches && (node.matches('.is-album') || node.matches('.is-group-first'))) {
-            const albumMid = node.getAttribute('data-mid');
-            if (albumMid && states[albumMid]) createBadgeForAlbum(node);
+            checkAndCreate(node);
           }
           const albums = node.querySelectorAll && node.querySelectorAll('.is-album, .is-group-first');
           if (albums && albums.length) {
-            albums.forEach((a) => {
-              const albumMid = a.getAttribute('data-mid');
-              if (albumMid && states[albumMid]) createBadgeForAlbum(a);
-            });
+            albums.forEach((a) => checkAndCreate(a));
           }
         }
 
         // Handle attribute changes (e.g., data-mid or class added later)
         if (m.type === 'attributes' && m.target instanceof Element) {
           const el = m.target;
-          if ((el.matches && (el.matches('.is-album') || el.matches('.is-group-first'))) && el.getAttribute('data-mid')) {
+          if (el.matches && (el.matches('.is-album') || el.matches('.is-group-first'))) {
             const albumMid = el.getAttribute('data-mid');
-            if (albumMid && states[albumMid]) createBadgeForAlbum(el);
+            if (albumMid) {
+              const key = `${ALBUM_STORAGE_KEY_BASE}_${albumMid}`;
+              if (localStorage.getItem(key)) createBadgeForAlbum(el);
+            }
           }
         }
       }
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-mid'] });
   };
+  // Perform one-time migration and then initialize features
+  migrateAlbumStates();
   addAlbumScanFeature();
 
   logger.info("Completed script setup.");
