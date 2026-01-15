@@ -363,7 +363,7 @@
         const c = document.getElementById("tel-downloader-progress-" + videoId);
         if (c && c.parentNode) c.parentNode.removeChild(c);
       } catch (e) {}
-    }, 2000);
+    }, 5000);
   };
 
   const AbortProgress = (videoId, err) => {
@@ -1498,6 +1498,9 @@
           if (attach) albumItems = [attach];
         }
 
+        const total = albumItems.length;
+        let downloaded = 0;
+
         // load latest state
         state = albumMid ? getAlbumState(albumMid) : state;
         for (const item of albumItems) {
@@ -1506,6 +1509,8 @@
           const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || (album.getAttribute && album.getAttribute('data-mid'));
           if (itemMid && state.items && state.items[itemMid]) {
             logger.info('Album scan: Skipping already downloaded item: ' + itemMid);
+            downloaded++;
+            badge.innerText = 'Scanning... ' + downloaded + '/' + total;
             continue;
           }
 
@@ -1515,6 +1520,8 @@
             // Open item viewer by clicking it
             try {
               logger.info('Album scan: Opening item viewer for: ' + (itemMid || 'unknown'));
+              badge.innerText = 'Processing... ' + (downloaded + 1) + '/' + total;
+              
               const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
               opener && opener.click();
               await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
@@ -1535,13 +1542,15 @@
               if (downloadBtn) {
                 logger.info('Album scan: Found download button, clicking it');
                 downloadBtn.click();
-                // Wait for download to start and complete
-                await new Promise((r) => setTimeout(r, 1500));
+                // Wait for download to start and queue properly
+                await new Promise((r) => setTimeout(r, 2000));
                 if (itemMid) {
                   state.items = state.items || {};
                   state.items[itemMid] = true;
                   if (albumMid) setAlbumState(albumMid, state);
                 }
+                downloaded++;
+                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
               } else {
                 logger.error('Album scan: Download button not found for item: ' + (itemMid || 'unknown'));
               }
@@ -1559,6 +1568,8 @@
               await new Promise((r) => setTimeout(r, 800));
             } catch (e) {
               logger.error('Album scan: Error processing video item: ' + (e?.message || e));
+              downloaded++;
+              badge.innerText = 'Scanning... ' + downloaded + '/' + total;
             }
           } else {
             // Image handling
@@ -1567,6 +1578,7 @@
               const src = imgEl.src;
               if (!(itemMid && state.items && state.items[itemMid])) {
                 logger.info('Album scan: Downloading image: ' + src);
+                badge.innerText = 'Processing... ' + (downloaded + 1) + '/' + total;
                 const hint = itemMid ? itemMid : (extractBlobIdFromUrl(src) || undefined);
                 try {
                   await tel_download_image(src, hint);
@@ -1578,9 +1590,13 @@
                   state.items[itemMid] = true;
                   if (albumMid) setAlbumState(albumMid, state);
                 }
+                downloaded++;
+                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
                 await new Promise((r) => setTimeout(r, 300));
               } else {
                 logger.info('Album scan: Skipping duplicate image: ' + src);
+                downloaded++;
+                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
               }
             }
 
@@ -1609,11 +1625,11 @@
         }
 
         // Update album status
-        const total = album.querySelectorAll('.album-item.grouped-item').length || albumItems.length;
-        const downloaded = Object.keys(state.items || {}).length;
-        if (downloaded >= total) {
+        const finalTotal = album.querySelectorAll('.album-item.grouped-item').length || albumItems.length;
+        const finalDownloaded = Object.keys(state.items || {}).length;
+        if (finalDownloaded >= finalTotal) {
           state.status = 'downloaded';
-        } else if (downloaded > 0) {
+        } else if (finalDownloaded > 0) {
           state.status = 'partial';
         } else {
           state.status = 'scanned';
@@ -1648,6 +1664,10 @@
         if (attach) albumItems = [attach];
       }
 
+      const total = albumItems.length;
+      let downloaded = 0;
+      const badge = album.querySelector('.tel-album-scanned-badge');
+
       for (const item of albumItems) {
         const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || null;
         // Identify video by presence of .video-time anywhere inside the item or a <video> element
@@ -1661,6 +1681,7 @@
           const src = (imgEl && imgEl.src) || (m && m[1]);
           if (src) {
             logger.info('Redownloading image: ' + src);
+            if (badge) badge.innerText = 'Redownloading... ' + (downloaded + 1) + '/' + total;
             try {
               const hint = itemMid ? itemMid : (extractBlobIdFromUrl(src) || undefined);
 
@@ -1677,6 +1698,8 @@
             } catch (e) {
               logger.error('Redownload image failed: ' + (e?.message || e));
             }
+            downloaded++;
+            if (badge) badge.innerText = 'Redownloading... ' + downloaded + '/' + total;
           }
           await new Promise(r => setTimeout(r, 200));
           continue;
@@ -1686,6 +1709,8 @@
         if (isVideo) {
           try {
             logger.info('Redownload: Opening item viewer for: ' + (itemMid || 'unknown'));
+            if (badge) badge.innerText = 'Redownloading... ' + (downloaded + 1) + '/' + total;
+            
             const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
             opener && opener.click();
             await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
@@ -1706,12 +1731,14 @@
             if (downloadBtn) {
               logger.info('Redownload: Found download button, clicking it');
               downloadBtn.click();
-              // Wait for download to start and complete
-              await new Promise((r) => setTimeout(r, 1500));
+              // Wait for download to start and queue properly
+              await new Promise((r) => setTimeout(r, 2000));
               if (itemMid) {
                 state.items[itemMid] = true;
                 if (albumMid) setAlbumState(albumMid, state);
               }
+              downloaded++;
+              if (badge) badge.innerText = 'Redownloading... ' + downloaded + '/' + total;
             } else {
               logger.error('Redownload: Download button not found for item: ' + (itemMid || 'unknown'));
             }
@@ -1729,14 +1756,15 @@
             await new Promise((r) => setTimeout(r, 800));
           } catch (e) {
             logger.error('Redownload: Error processing video item: ' + (e?.message || e));
+            downloaded++;
+            if (badge) badge.innerText = 'Redownloading... ' + downloaded + '/' + total;
           }
         }
       }
 
-      // After redownloads, update album status (only modify items we changed above)
-      const total = album.querySelectorAll('.album-item.grouped-item').length || albumItems.length;
-      const downloaded = Object.keys(state.items || {}).filter(k => state.items[k] === true).length;
-      state.status = downloaded >= total ? 'downloaded' : (downloaded > 0 ? 'partial' : 'scanned');
+      // After redownloads, update album status
+      const finalDownloaded = Object.keys(state.items || {}).filter(k => state.items[k] === true).length;
+      state.status = finalDownloaded >= total ? 'downloaded' : (finalDownloaded > 0 ? 'partial' : 'scanned');
       if (albumMid) setAlbumState(albumMid, state);
 
       // Update badge text
