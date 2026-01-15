@@ -1505,133 +1505,48 @@
           // so fall back to album's data-mid
           const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || (album.getAttribute && album.getAttribute('data-mid'));
           if (itemMid && state.items && state.items[itemMid]) {
-            logger.info('Skipping already downloaded item: ' + itemMid);
+            logger.info('Album scan: Skipping already downloaded item: ' + itemMid);
             continue;
           }
 
-          // Detect video by presence of .video-time anywhere inside the item or a <video> element
-        // This covers both grouped album items and single-message attachments
-        const isVideo = !!(item.querySelector('.video-time') || item.querySelector('video'));
+          // Detect video by presence of .video-time or <video> element
+          const isVideo = !!(item.querySelector('.video-time') || item.querySelector('video'));
           if (isVideo) {
-            // try to find a direct source as a fallback, but DO NOT use it immediately — we want to open the player first
-            let directSrc =
-              item.querySelector('video')?.currentSrc ||
-              item.querySelector('video')?.src ||
-              item.querySelector('video source')?.src ||
-              item.querySelector('a')?.href ||
-              item.querySelector('[data-src]')?.getAttribute('data-src');
-
-            if (!directSrc) {
-              const bg = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
-              const m = bg && bg.match(/url\(["']?(.*?)['"]?\)/);
-              if (m && m[1]) directSrc = m[1];
-            }
-
-            // Validate directSrc with HEAD check to avoid opening viewer unnecessarily
-            let directSrcIsValid = false;
-            if (directSrc) {
-              try {
-                let contentType = null;
-                try {
-                  const headRes = await fetch(directSrc, { method: 'HEAD' });
-                  contentType = headRes.headers.get('Content-Type') || '';
-                  directSrcIsValid = contentType.indexOf('video/') === 0;
-                } catch (e) {
-                  logger.info('HEAD check failed for direct src: ' + directSrc + ' (' + (e?.message || e) + ')');
-                }
-
-                if (directSrcIsValid) {
-                  logger.info('Direct video src is valid, downloading: ' + directSrc);
-                  await tel_download_video(directSrc, itemMid || undefined);
-                  if (itemMid) {
-                    state.items = state.items || {};
-                    state.items[itemMid] = true;
-                    if (albumMid) setAlbumState(albumMid, state);
-                  }
-                  await new Promise((r) => setTimeout(r, 200));
-                  continue; // move to next item
-                } else {
-                  logger.info('Direct src HEAD check failed or returned non-video, will use viewer probe: ' + directSrc);
-                }
-              } catch (e) {
-                logger.error('Error while attempting direct src validation: ' + (e?.message || e));
-                // fall through to viewer probe
-              }
-            }
-
-            // Use helper to probe viewer and extract a stream URL
-            telSuppressMediaError = true;
-            let probeRes = null;
+            // Open item viewer by clicking it
             try {
-              probeRes = await probeViewerStream(item, { maxAttempts: 3, timeout: 12000 });
-
-              if (probeRes && probeRes.url) {
-                const found = probeRes.url;
-                const contentType = probeRes.contentType;
-
-                if (contentType && contentType.indexOf('text/html') === 0) {
-                  logger.info('Found URL returns text/html, skipping: ' + found);
+              logger.info('Album scan: Opening item viewer for: ' + (itemMid || 'unknown'));
+              const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
+              opener && opener.click();
+              await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
+              
+              // Wait for download button to appear and click it
+              let downloadBtn = null;
+              let attempts = 0;
+              while (!downloadBtn && attempts < 20) {
+                downloadBtn = document.querySelector('.media-viewer-whole .tel-download, .ckin__player .tel-download');
+                if (!downloadBtn) {
+                  await new Promise((r) => setTimeout(r, 100));
+                  attempts++;
                 } else {
-                  if (!(state.items && state.items[itemMid] === true)) {
-                    logger.info('Found video in viewer, starting download: ' + found);
-                    try {
-                      if (typeof found === 'string' && found.startsWith('blob:')) {
-                        logger.info('Found blob: URL, downloading with itemMid: ' + found);
-                        try {
-                          const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
-                          logger.info('Saved blob resource as: ' + fileName);
-                          if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-                        } catch (e) { logger.error('Direct fetch of blob URL failed: ' + (e?.message || e)); }
-                      } else {
-                        const dl = tel_download_video(found, itemMid || undefined);
-                        dl.then(() => {
-                          if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-                        }).catch((e) => {
-                          logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
-                        });
-                        // If this probe acquired the viewer lock, wait until the download actually starts
-                        if (probeRes && probeRes.lockAcquired) {
-                          if (dl && dl.started) {
-                            try { await dl.started; } catch (e) {}
-                          } else {
-                            await new Promise((r) => setTimeout(r, 200));
-                          }
-                        }
-                      }
-                    } catch (e) {
-                      logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
-                    }
-                  } else {
-                    logger.info('Skipping already downloaded item (by mid) while processing found video');
-                  }
-                }
-                await new Promise((r) => setTimeout(r, 200));
-              } else {
-                logger.info('Unable to extract video URL from viewer within timeout');
-                // Fallback to direct src if probe failed
-                if (directSrc) {
-                  try {
-                    logger.info('Falling back to direct src for download: ' + directSrc);
-                    if (directSrc.startsWith('blob:')) {
-                      logger.info('Direct src is a blob: URL; downloading with itemMid');
-                      try {
-                        const fileName = await fetchAndSaveUrl(directSrc, { filenameHint: itemMid, itemMid });
-                        logger.info('Saved direct blob resource as: ' + fileName);
-                        if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-                      } catch (e) {
-                        logger.error('Direct fetch of blob directSrc failed: ' + (e?.message || e));
-                      }
-                    } else {
-                      await tel_download_video(directSrc, itemMid || undefined);
-                      if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
-                    }
-                  } catch (e) {
-                    logger.error('Fallback download failed for: ' + directSrc + ' - ' + (e?.message || e));
-                  }
+                  break;
                 }
               }
-            } finally {
-              // Close viewer and remove handler
+              
+              if (downloadBtn) {
+                logger.info('Album scan: Found download button, clicking it');
+                downloadBtn.click();
+                // Wait for download to start and complete
+                await new Promise((r) => setTimeout(r, 1500));
+                if (itemMid) {
+                  state.items = state.items || {};
+                  state.items[itemMid] = true;
+                  if (albumMid) setAlbumState(albumMid, state);
+                }
+              } else {
+                logger.error('Album scan: Download button not found for item: ' + (itemMid || 'unknown'));
+              }
+              
+              // Close viewer
               try {
                 const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
                 if (closeBtn) {
@@ -1639,46 +1554,33 @@
                 } else {
                   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
                 }
-              } catch (e) {
-                logger.error('Error closing viewer: ' + (e?.message || e));
-              }
-              // Disable global suppression when done probing
-              telSuppressMediaError = false;
-              // Release viewer lock if probe acquired it — viewer has been closed
-              try {
-                if (probeRes && probeRes.lockAcquired) releaseViewerLock();
               } catch (e) {}
+              
+              await new Promise((r) => setTimeout(r, 800));
+            } catch (e) {
+              logger.error('Album scan: Error processing video item: ' + (e?.message || e));
             }
-
-            // small pause to ensure viewer closed before next item
-            await new Promise((r) => setTimeout(r, 250));
           } else {
+            // Image handling
             const imgEl = item.querySelector('img');
             if (imgEl && imgEl.src) {
               const src = imgEl.src;
               if (!(itemMid && state.items && state.items[itemMid])) {
-                logger.info('Downloading media: ' + src);
-                // Use itemMid or blob id as filename hint when possible
+                logger.info('Album scan: Downloading image: ' + src);
                 const hint = itemMid ? itemMid : (extractBlobIdFromUrl(src) || undefined);
-
-                // For images we do NOT open the viewer. Use existing image download logic
-                // which fetches blob and preserves an appropriate extension/filename.
                 try {
                   await tel_download_image(src, hint);
                 } catch (e) {
-                  logger.error('Image download failed: ' + (e?.message || e));
+                  logger.error('Album scan: Image download failed: ' + (e?.message || e));
                 }
-
                 if (itemMid) {
                   state.items = state.items || {};
                   state.items[itemMid] = true;
                   if (albumMid) setAlbumState(albumMid, state);
                 }
-                await new Promise((r) => setTimeout(r, 150));
-                continue;
+                await new Promise((r) => setTimeout(r, 300));
               } else {
-                logger.info('Skipping duplicate media: ' + src);
-                continue;
+                logger.info('Album scan: Skipping duplicate image: ' + src);
               }
             }
 
@@ -1780,133 +1682,54 @@
           continue;
         }
 
-        // Video — validate directSrc with HEAD check first; fall back to viewer probe if invalid
-        let directSrc = item.querySelector('video')?.currentSrc || item.querySelector('video')?.src || item.querySelector('video source')?.src || item.querySelector('a')?.href || item.querySelector('[data-src]')?.getAttribute('data-src');
-        if (!directSrc) {
-          const bg = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
-          const mm = bg && bg.match(/url\(["']?(.*?)['"]?\)/);
-          if (mm && mm[1]) directSrc = mm[1];
-        }
-
-        // Validate directSrc with HEAD check for redownload
-        let directSrcIsValid = false;
-        if (directSrc) {
+        // Video — open viewer and click download button
+        if (isVideo) {
           try {
-            let contentType = null;
-            try {
-              const headRes = await fetch(directSrc, { method: 'HEAD' });
-              contentType = headRes.headers.get('Content-Type') || '';
-              directSrcIsValid = contentType.indexOf('video/') === 0;
-            } catch (e) {
-              logger.info('HEAD check failed for direct src during redownload: ' + directSrc + ' (' + (e?.message || e) + ')');
-            }
-
-            if (directSrcIsValid) {
-              logger.info('Direct video src is valid for redownload: ' + directSrc);
-              try {
-                await tel_download_video(directSrc, itemMid || undefined);
-                if (itemMid) {
-                  state.items[itemMid] = true;
-                  if (albumMid) setAlbumState(albumMid, state);
-                }
-              } catch (e) {
-                logger.error('Redownload direct src failed: ' + (e?.message || e));
-              }
-              await new Promise(r => setTimeout(r, 200));
-              continue; // next item
-            } else {
-              logger.info('Direct src HEAD check failed or returned non-video during redownload, will use viewer probe: ' + directSrc);
-            }
-          } catch (e) {
-            logger.error('Error while attempting direct src redownload validation: ' + (e?.message || e));
-            // fall through to viewer probe
-          }
-        }
-
-        // Otherwise open viewer and extract using the probe helper
-        telSuppressMediaError = true;
-        try {
-          const probeRes = await probeViewerStream(item, { maxAttempts: 3, timeout: 12000 });
-          if (probeRes && probeRes.url) {
-            const found = probeRes.url;
-
-            logger.info('Redownloading video (viewer): ' + found);
-            try {
-              if (typeof found === 'string' && found.startsWith('blob:')) {
-                logger.info('Found blob: URL in redownload; downloading with itemMid');
-                try {
-                  const fileName = await fetchAndSaveUrl(found, { filenameHint: itemMid, itemMid });
-                  logger.info('Saved redownloaded blob as: ' + fileName);
-                  if (itemMid) {
-                    state.items[itemMid] = state.items || {};
-                    state.items[itemMid] = true;
-                    if (albumMid) setAlbumState(albumMid, state);
-                  }
-                } catch (e) {
-                  logger.error('Direct fetch of blob URL failed during redownload: ' + (e?.message || e));
-                }
+            logger.info('Redownload: Opening item viewer for: ' + (itemMid || 'unknown'));
+            const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
+            opener && opener.click();
+            await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
+            
+            // Wait for download button to appear and click it
+            let downloadBtn = null;
+            let attempts = 0;
+            while (!downloadBtn && attempts < 20) {
+              downloadBtn = document.querySelector('.media-viewer-whole .tel-download, .ckin__player .tel-download');
+              if (!downloadBtn) {
+                await new Promise((r) => setTimeout(r, 100));
+                attempts++;
               } else {
-                const dl = tel_download_video(found, itemMid || undefined);
-                dl.then(() => {
-                  if (itemMid) {
-                    state.items[itemMid] = true;
-                    if (albumMid) setAlbumState(albumMid, state);
-                  }
-                }).catch((e) => {
-                  logger.error('Redownload video (viewer) failed: ' + (e?.message || e));
-                });
-                // Wait for download to start if probe acquired the viewer lock
-                if (probeRes && probeRes.lockAcquired) {
-                  if (dl && dl.started) {
-                    try { await dl.started; } catch (e) {}
-                  } else {
-                    await new Promise(r => setTimeout(r, 200));
-                  }
-                }
-              }
-            } catch (e) {
-              logger.error('Redownload video (viewer) failed: ' + (e?.message || e));
-            }
-          } else {
-            logger.info('Redownload: unable to extract video URL within timeout');
-            if (directSrc) {
-              try {
-                logger.info('Falling back to direct src for redownload: ' + directSrc);
-                if (directSrc.startsWith('blob:')) {
-                  logger.info('Direct src is a blob: URL; downloading with itemMid');
-                  try {
-                    const fileName = await fetchAndSaveUrl(directSrc, { filenameHint: itemMid, itemMid });
-                    logger.info('Saved redownloaded blob (direct src) as: ' + fileName);
-                    if (itemMid) {
-                      state.items[itemMid] = true;
-                      if (albumMid) setAlbumState(albumMid, state);
-                    }
-                  } catch (e) {
-                    logger.error('Direct fetch of blob directSrc failed during redownload: ' + (e?.message || e));
-                  }
-                } else {
-                  await tel_download_video(directSrc, itemMid || undefined);
-                  if (itemMid) {
-                    state.items[itemMid] = true;
-                    if (albumMid) setAlbumState(albumMid, state);
-                  }
-                }
-              } catch (e) {
-                logger.error('Fallback redownload failed for: ' + directSrc + ' - ' + (e?.message || e));
+                break;
               }
             }
+            
+            if (downloadBtn) {
+              logger.info('Redownload: Found download button, clicking it');
+              downloadBtn.click();
+              // Wait for download to start and complete
+              await new Promise((r) => setTimeout(r, 1500));
+              if (itemMid) {
+                state.items[itemMid] = true;
+                if (albumMid) setAlbumState(albumMid, state);
+              }
+            } else {
+              logger.error('Redownload: Download button not found for item: ' + (itemMid || 'unknown'));
+            }
+            
+            // Close viewer
+            try {
+              const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
+              if (closeBtn) {
+                closeBtn.click();
+              } else {
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+              }
+            } catch (e) {}
+            
+            await new Promise((r) => setTimeout(r, 800));
+          } catch (e) {
+            logger.error('Redownload: Error processing video item: ' + (e?.message || e));
           }
-        } finally {
-          // close viewer
-          try {
-            const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
-            if (closeBtn) closeBtn.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-          } catch (e) {}
-          telSuppressMediaError = false;
-          try {
-            if (probeRes && probeRes.lockAcquired) releaseViewerLock();
-          } catch (e) {}
-          await new Promise(r => setTimeout(r, 250));
         }
       }
 
