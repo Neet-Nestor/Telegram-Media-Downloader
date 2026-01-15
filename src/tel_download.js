@@ -120,9 +120,33 @@
     return finalName;
   };
 
+  // Viewer lock — ensure only one viewer is open at a time
+  const viewerLockQueue = [];
+  let viewerLocked = false;
+  const acquireViewerLock = async () => {
+    if (!viewerLocked) {
+      viewerLocked = true;
+      return;
+    }
+    return new Promise((resolve) => viewerLockQueue.push(resolve));
+  };
+  const releaseViewerLock = () => {
+    if (viewerLockQueue.length > 0) {
+      const next = viewerLockQueue.shift();
+      next();
+    } else {
+      viewerLocked = false;
+    }
+  };
+
   // Probe the opened media viewer to find a playable stream URL.
-  // Returns { url, contentType } if found, otherwise null.
+  // Returns { url, contentType, lockAcquired } if found or not, but when lockAcquired is true the caller
+  // must call releaseViewerLock() after it closes the viewer (so the viewer remains unique during download).
   const probeViewerStream = async (item, { maxAttempts = 3, timeout = 12000 } = {}) => {
+    // Acquire viewer lock so only one probe/download sequence manipulates the viewer at a time
+    await acquireViewerLock();
+    let lockAcquired = true;
+
     // Choose the element that most reliably opens the viewer. Some album items don't
     // have an <a> anchor — the clickable target is the media element itself (img/.album-item-media/.media-container)
     let opener = item;
@@ -171,10 +195,10 @@
                     } catch (e) { logger.info('HEAD check failed for probe URL: ' + href + ' (' + (e?.message || e) + ')'); }
 
                     if (!contentType || contentType.indexOf('text/html') !== 0) {
-                      return { url: href, contentType };
+                      return { url: href, contentType, lockAcquired };
                     }
                   } catch (e) {
-                    return { url: s, contentType: null };
+                    return { url: s, contentType: null, lockAcquired };
                   }
                 }
               }
@@ -186,7 +210,7 @@
                   const headRes = await fetch(streamLink, { method: 'HEAD' });
                   contentType = headRes.headers.get('Content-Type') || '';
                 } catch (e) { logger.info('HEAD check failed for probe stream link: ' + streamLink + ' (' + (e?.message || e) + ')'); }
-                if (!contentType || contentType.indexOf('text/html') !== 0) return { url: streamLink, contentType };
+                if (!contentType || contentType.indexOf('text/html') !== 0) return { url: streamLink, contentType, lockAcquired };
               }
             } catch (e) {
               logger.error('Error while polling viewer during probe: ' + (e?.message || e));
@@ -203,11 +227,16 @@
           logger.error('Unexpected error in probe attempt: ' + (e?.message || e));
         }
       }
+    } catch (e) {
+      // Ensure we never let an exception leak while holding the viewer lock — return with lockAcquired so caller can release it.
+      logger.error('Unexpected error in probeViewerStream: ' + (e?.message || e));
+      return { lockAcquired };
     } finally {
       telSuppressMediaError = prevSuppress;
     }
 
-    return null;
+    // No URL found but lock was acquired — caller should release when viewer is closed
+    return { lockAcquired };
   };
 
 
@@ -362,7 +391,49 @@
     }
   };
 
+  // Download queue (max parallel downloads) and worker wrapper
+  const MAX_CONCURRENT_DOWNLOADS = 5;
+  let activeDownloadCount = 0;
+  const downloadQueue = [];
+
+  const processDownloadQueue = () => {
+    if (activeDownloadCount >= MAX_CONCURRENT_DOWNLOADS || downloadQueue.length === 0) return;
+    const job = downloadQueue.shift();
+    activeDownloadCount++;
+    // Notify job that it has started before running worker
+    try {
+      if (job.startResolve && typeof job.startResolve === 'function') {
+        try { job.startResolve(); } catch (e) {}
+      }
+    } catch (e) {}
+
+    (async () => {
+      try {
+        const res = await tel_download_video_worker(job.url, job.filenameHint);
+        job.resolve(res);
+      } catch (e) {
+        job.reject(e);
+      } finally {
+        activeDownloadCount--;
+        processDownloadQueue();
+      }
+    })();
+  };
+
   const tel_download_video = (url, filenameHint) => {
+    let startResolve;
+    const started = new Promise((r) => { startResolve = r; });
+    const completion = new Promise((resolve, reject) => {
+      downloadQueue.push({ url, filenameHint, resolve, reject, startResolve });
+      processDownloadQueue();
+    });
+    // Attach started promise so callers can await download start
+    completion.started = started;
+    return completion;
+  };
+
+  // Worker that actually performs the download; kept separate so tel_download_video can be a queued wrapper
+  const tel_download_video_worker = async (url, filenameHint) => {
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
@@ -396,12 +467,28 @@
     }
 
     if (!baseName && !fileName) {
-      const blobId = extractBlobIdFromUrl(url);
-      if (blobId) baseName = sanitizeFilename(blobId);
+      // Try to pull filename from any encoded JSON metadata inside the URL
+      try {
+        const decoded = decodeURIComponent(url || "");
+        const m = decoded.match(/['\"]fileName['\"]\s*:\s*['\"]([^'\"]+)['\"]/i);
+        if (m && m[1]) {
+          fileName = m[1];
+        }
+      } catch (e) {}
+
+      // Fallback to blob id extracted from URL path
+      if (!fileName) {
+        const blobId = extractBlobIdFromUrl(url);
+        if (blobId) baseName = sanitizeFilename(blobId);
+      }
     }
+
+    // Final fallback: derive a stable name from URL hash so download never fails
     if (!fileName && !baseName) {
-      throw new Error('No filename could be determined for video (no hint, metadata, or blob ID)');
+      baseName = sanitizeFilename('download_' + hashCode(String(url || '')));
+      logger.info('No filename hint, metadata, or blob id; using fallback name: ' + baseName);
     }
+
     if (!fileName) fileName = baseName + "." + _file_extension;
 
     logger.info(`URL: ${url}`, fileName);
@@ -1027,6 +1114,8 @@
     // Query hidden buttons and unhide them
     const hiddenButtons = mediaButtons.querySelectorAll("button.btn-icon.hide");
     let onDownload = null;
+    let qualityDownloadBtn = mediaButtons.querySelector(".quality-download-options-button-menu");
+    
     for (const btn of hiddenButtons) {
       btn.classList.remove("hide");
       if (btn.textContent === FORWARD_ICON) {
@@ -1040,6 +1129,14 @@
         };
         logger.info("onDownload", onDownload);
       }
+    }
+    
+    // Prioritize official Telegram quality download button if available
+    if (!onDownload && qualityDownloadBtn) {
+      onDownload = () => {
+        logger.info("Using official Telegram quality download button");
+        qualityDownloadBtn.click();
+      };
     }
 
     if (mediaAspecter.querySelector(".ckin__player")) {
@@ -1064,9 +1161,38 @@
         if (onDownload) {
           downloadButton.onclick = onDownload;
         } else {
-          downloadButton.onclick = () => {
+          downloadButton.onclick = async () => {
             const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
-            tel_download_video(mediaAspecter.querySelector("video").src, dataMid);
+            let videoUrl = mediaAspecter.querySelector("video").src;
+            
+            // Validate URL before attempting download
+            let isValidUrl = false;
+            try {
+              const headRes = await fetch(videoUrl, { method: 'HEAD' });
+              const contentType = headRes.headers.get('Content-Type') || '';
+              isValidUrl = contentType.indexOf('video/') === 0;
+            } catch (e) {
+              logger.info('HEAD check failed for video src: ' + (e?.message || e));
+            }
+            
+            // If URL is invalid, try to probe the viewer for a working stream URL
+            if (!isValidUrl) {
+              logger.info('Direct video src returned non-video or failed, probing viewer for stream...');
+              try {
+                const probeRes = await probeViewerStream(mediaAspecter, { maxAttempts: 3, timeout: 12000 });
+                if (probeRes && probeRes.url) {
+                  videoUrl = probeRes.url;
+                  logger.info('Found valid stream URL via probe: ' + videoUrl);
+                  tel_download_video(videoUrl, dataMid);
+                  if (probeRes.lockAcquired) releaseViewerLock();
+                  return;
+                }
+              } catch (e) {
+                logger.error('Viewer probe failed: ' + (e?.message || e));
+              }
+            }
+            
+            tel_download_video(videoUrl, dataMid);
           };
         }
         brControls.prepend(downloadButton);
@@ -1087,9 +1213,38 @@
       if (onDownload) {
         downloadButton.onclick = onDownload;
       } else {
-        downloadButton.onclick = () => {
+        downloadButton.onclick = async () => {
           const dataMid = mediaContainer.getAttribute('data-mid') || mediaContainer.closest('[data-mid]')?.getAttribute('data-mid');
-          tel_download_video(mediaAspecter.querySelector("video").src, dataMid);
+          let videoUrl = mediaAspecter.querySelector("video").src;
+          
+          // Validate URL before attempting download
+          let isValidUrl = false;
+          try {
+            const headRes = await fetch(videoUrl, { method: 'HEAD' });
+            const contentType = headRes.headers.get('Content-Type') || '';
+            isValidUrl = contentType.indexOf('video/') === 0;
+          } catch (e) {
+            logger.info('HEAD check failed for video src: ' + (e?.message || e));
+          }
+          
+          // If URL is invalid, try to probe the viewer for a working stream URL
+          if (!isValidUrl) {
+            logger.info('Direct video src returned non-video or failed, probing viewer for stream...');
+            try {
+              const probeRes = await probeViewerStream(mediaAspecter, { maxAttempts: 3, timeout: 12000 });
+              if (probeRes && probeRes.url) {
+                videoUrl = probeRes.url;
+                logger.info('Found valid stream URL via probe: ' + videoUrl);
+                tel_download_video(videoUrl, dataMid);
+                if (probeRes.lockAcquired) releaseViewerLock();
+                return;
+              }
+            } catch (e) {
+              logger.error('Viewer probe failed: ' + (e?.message || e));
+            }
+          }
+          
+          tel_download_video(videoUrl, dataMid);
         };
       }
       mediaButtons.prepend(downloadButton);
@@ -1335,6 +1490,7 @@
       badge.addEventListener('click', async (ev) => {
         ev.stopPropagation();
         badge.disabled = true;
+        try {
         // Gather album items; if none (single message), treat the attachment itself as one item
         let albumItems = Array.from(album.querySelectorAll('.album-item.grouped-item'));
         if (albumItems.length === 0) {
@@ -1371,20 +1527,21 @@
               if (m && m[1]) directSrc = m[1];
             }
 
-
-            // prefer using the directSrc after a HEAD check to avoid opening the viewer unnecessarily.
-            else if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
+            // Validate directSrc with HEAD check to avoid opening viewer unnecessarily
+            let directSrcIsValid = false;
+            if (directSrc) {
               try {
                 let contentType = null;
                 try {
                   const headRes = await fetch(directSrc, { method: 'HEAD' });
                   contentType = headRes.headers.get('Content-Type') || '';
+                  directSrcIsValid = contentType.indexOf('video/') === 0;
                 } catch (e) {
                   logger.info('HEAD check failed for direct src: ' + directSrc + ' (' + (e?.message || e) + ')');
                 }
 
-                if (!contentType || contentType.indexOf('text/html') !== 0) {
-                  logger.info('Using direct video src for download: ' + directSrc);
+                if (directSrcIsValid) {
+                  logger.info('Direct video src is valid, downloading: ' + directSrc);
                   await tel_download_video(directSrc, itemMid || undefined);
                   if (itemMid) {
                     state.items = state.items || {};
@@ -1394,10 +1551,10 @@
                   await new Promise((r) => setTimeout(r, 200));
                   continue; // move to next item
                 } else {
-                  logger.info('Direct src HEAD returned HTML, will fall back to viewer probe: ' + directSrc);
+                  logger.info('Direct src HEAD check failed or returned non-video, will use viewer probe: ' + directSrc);
                 }
               } catch (e) {
-                logger.error('Error while attempting direct src download: ' + (e?.message || e));
+                logger.error('Error while attempting direct src validation: ' + (e?.message || e));
                 // fall through to viewer probe
               }
             }
@@ -1426,8 +1583,20 @@
                           if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
                         } catch (e) { logger.error('Direct fetch of blob URL failed: ' + (e?.message || e)); }
                       } else {
-                        await tel_download_video(found, itemMid || undefined);
-                        if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
+                        const dl = tel_download_video(found, itemMid || undefined);
+                        dl.then(() => {
+                          if (itemMid) { state.items = state.items || {}; state.items[itemMid] = true; if (albumMid) setAlbumState(albumMid, state); }
+                        }).catch((e) => {
+                          logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
+                        });
+                        // If this probe acquired the viewer lock, wait until the download actually starts
+                        if (probeRes && probeRes.lockAcquired) {
+                          if (dl && dl.started) {
+                            try { await dl.started; } catch (e) {}
+                          } else {
+                            await new Promise((r) => setTimeout(r, 200));
+                          }
+                        }
                       }
                     } catch (e) {
                       logger.error('Download failed for: ' + found + ' - ' + (e?.message || e));
@@ -1475,6 +1644,10 @@
               }
               // Disable global suppression when done probing
               telSuppressMediaError = false;
+              // Release viewer lock if probe acquired it — viewer has been closed
+              try {
+                if (probeRes && probeRes.lockAcquired) releaseViewerLock();
+              } catch (e) {}
             }
 
             // small pause to ensure viewer closed before next item
@@ -1546,7 +1719,11 @@
         if (albumMid) setAlbumState(albumMid, state);
         updateBadgeText(state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned'));
 
-        badge.disabled = false;
+        } catch (e) { logger.error('Badge handler error: ' + (e?.message || e)); }
+        finally {
+          badge.disabled = false;
+          try { if (typeof ensureRedownloadButton === 'function') ensureRedownloadButton(); } catch (e) {}
+        }
       });
 
       // Badge already appended inside wrapper; ensure redownload UI is present when appropriate
@@ -1603,7 +1780,7 @@
           continue;
         }
 
-        // Video — open the viewer first and probe for a stream; fall back to direct src if probing fails
+        // Video — validate directSrc with HEAD check first; fall back to viewer probe if invalid
         let directSrc = item.querySelector('video')?.currentSrc || item.querySelector('video')?.src || item.querySelector('video source')?.src || item.querySelector('a')?.href || item.querySelector('[data-src]')?.getAttribute('data-src');
         if (!directSrc) {
           const bg = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
@@ -1611,19 +1788,21 @@
           if (mm && mm[1]) directSrc = mm[1];
         }
 
-        // Prefer direct src for redownload when safe (reply/stream/blob/mp4)
-        else if (directSrc && (item.closest('.reply') || directSrc.includes('stream/') || directSrc.startsWith('blob:') || /\.mp4($|\?)/i.test(directSrc))) {
+        // Validate directSrc with HEAD check for redownload
+        let directSrcIsValid = false;
+        if (directSrc) {
           try {
             let contentType = null;
             try {
               const headRes = await fetch(directSrc, { method: 'HEAD' });
               contentType = headRes.headers.get('Content-Type') || '';
+              directSrcIsValid = contentType.indexOf('video/') === 0;
             } catch (e) {
               logger.info('HEAD check failed for direct src during redownload: ' + directSrc + ' (' + (e?.message || e) + ')');
             }
 
-            if (!contentType || contentType.indexOf('text/html') !== 0) {
-              logger.info('Using direct video src for redownload: ' + directSrc);
+            if (directSrcIsValid) {
+              logger.info('Direct video src is valid for redownload: ' + directSrc);
               try {
                 await tel_download_video(directSrc, itemMid || undefined);
                 if (itemMid) {
@@ -1636,10 +1815,10 @@
               await new Promise(r => setTimeout(r, 200));
               continue; // next item
             } else {
-              logger.info('Direct src HEAD returned HTML during redownload, will fall back to viewer probe: ' + directSrc);
+              logger.info('Direct src HEAD check failed or returned non-video during redownload, will use viewer probe: ' + directSrc);
             }
           } catch (e) {
-            logger.error('Error while attempting direct src redownload: ' + (e?.message || e));
+            logger.error('Error while attempting direct src redownload validation: ' + (e?.message || e));
             // fall through to viewer probe
           }
         }
@@ -1667,10 +1846,22 @@
                   logger.error('Direct fetch of blob URL failed during redownload: ' + (e?.message || e));
                 }
               } else {
-                await tel_download_video(found, itemMid || undefined);
-                if (itemMid) {
-                  state.items[itemMid] = true;
-                  if (albumMid) setAlbumState(albumMid, state);
+                const dl = tel_download_video(found, itemMid || undefined);
+                dl.then(() => {
+                  if (itemMid) {
+                    state.items[itemMid] = true;
+                    if (albumMid) setAlbumState(albumMid, state);
+                  }
+                }).catch((e) => {
+                  logger.error('Redownload video (viewer) failed: ' + (e?.message || e));
+                });
+                // Wait for download to start if probe acquired the viewer lock
+                if (probeRes && probeRes.lockAcquired) {
+                  if (dl && dl.started) {
+                    try { await dl.started; } catch (e) {}
+                  } else {
+                    await new Promise(r => setTimeout(r, 200));
+                  }
                 }
               }
             } catch (e) {
@@ -1712,6 +1903,9 @@
             if (closeBtn) closeBtn.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
           } catch (e) {}
           telSuppressMediaError = false;
+          try {
+            if (probeRes && probeRes.lockAcquired) releaseViewerLock();
+          } catch (e) {}
           await new Promise(r => setTimeout(r, 250));
         }
       }
