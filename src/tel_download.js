@@ -1346,7 +1346,14 @@
         album.style.position = 'relative';
       }
       const existing = album.querySelector('.tel-album-scanned-badge');
-      const albumMid = album.getAttribute && album.getAttribute('data-mid');
+      
+      // Get albumMid: for /k/ it's data-mid on the album, for /a/ it's data-album-main-id on .bottom-marker
+      let albumMid = album.getAttribute && album.getAttribute('data-mid');
+      if (!albumMid) {
+        const marker = album.querySelector && album.querySelector('.bottom-marker');
+        albumMid = marker && marker.getAttribute && marker.getAttribute('data-album-main-id');
+      }
+      
       let state = albumMid ? getAlbumState(albumMid) : { status: null, items: {} };
       if (initStatus && !state.status) {
         state.status = initStatus;
@@ -1491,8 +1498,12 @@
         ev.stopPropagation();
         badge.disabled = true;
         try {
-        // Gather album items; if none (single message), treat the attachment itself as one item
+        // Gather album items; handle both /a/ and /k/ structures
         let albumItems = Array.from(album.querySelectorAll('.album-item.grouped-item'));
+        if (albumItems.length === 0) {
+          // Try /a/ structure: .album-item-select-wrapper > .media-inner
+          albumItems = Array.from(album.querySelectorAll('.album-item-select-wrapper .media-inner'));
+        }
         if (albumItems.length === 0) {
           const attach = album.querySelector('.attachment, .album-item, .album-item-media, .media-container');
           if (attach) albumItems = [attach];
@@ -1504,9 +1515,17 @@
         // load latest state
         state = albumMid ? getAlbumState(albumMid) : state;
         for (const item of albumItems) {
-          // For single-message attachments the item may not have its own data-mid,
-          // so fall back to album's data-mid
-          const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || (album.getAttribute && album.getAttribute('data-mid'));
+          // For /a/, get itemMid from data-message-id of the media-inner element itself
+          // For /k/, get it from data-mid
+          let itemMid = item.getAttribute && item.getAttribute('data-mid');
+          if (!itemMid && item.id && item.id.startsWith('album-media-message-')) {
+            itemMid = item.id.replace('album-media-message-', '');
+          }
+          // Fall back to album's mid if not found
+          if (!itemMid) {
+            itemMid = album.getAttribute && album.getAttribute('data-mid');
+          }
+          
           if (itemMid && state.items && state.items[itemMid]) {
             logger.info('Album scan: Skipping already downloaded item: ' + itemMid);
             downloaded++;
@@ -1517,59 +1536,71 @@
           // Detect video by presence of .video-time or <video> element
           const isVideo = !!(item.querySelector('.video-time') || item.querySelector('video'));
           if (isVideo) {
-            // Open item viewer by clicking it
-            try {
-              logger.info('Album scan: Opening item viewer for: ' + (itemMid || 'unknown'));
-              badge.innerText = 'Processing... ' + (downloaded + 1) + '/' + total;
-              
-              const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
-              opener && opener.click();
-              await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
-              
-              // Wait for download button to appear and click it
-              let downloadBtn = null;
-              let attempts = 0;
-              while (!downloadBtn && attempts < 20) {
-                downloadBtn = document.querySelector('.media-viewer-whole .tel-download, .ckin__player .tel-download');
-                if (!downloadBtn) {
-                  await new Promise((r) => setTimeout(r, 100));
-                  attempts++;
-                } else {
-                  break;
-                }
+            // Skip video download for /a/ webapp
+            if (location.pathname.startsWith('/a/')) {
+              logger.info('Album scan: Skipping video for /a/ platform: ' + (itemMid || 'unknown'));
+              if (itemMid) {
+                state.items = state.items || {};
+                state.items[itemMid] = true;
+                if (albumMid) setAlbumState(albumMid, state);
               }
-              
-              if (downloadBtn) {
-                logger.info('Album scan: Found download button, clicking it');
-                downloadBtn.click();
-                // Wait for download to start and queue properly
-                await new Promise((r) => setTimeout(r, 2000));
-                if (itemMid) {
-                  state.items = state.items || {};
-                  state.items[itemMid] = true;
-                  if (albumMid) setAlbumState(albumMid, state);
-                }
-                downloaded++;
-                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
-              } else {
-                logger.error('Album scan: Download button not found for item: ' + (itemMid || 'unknown'));
-              }
-              
-              // Close viewer
-              try {
-                const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
-                if (closeBtn) {
-                  closeBtn.click();
-                } else {
-                  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-                }
-              } catch (e) {}
-              
-              await new Promise((r) => setTimeout(r, 800));
-            } catch (e) {
-              logger.error('Album scan: Error processing video item: ' + (e?.message || e));
               downloaded++;
               badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+            } else {
+              // Video download for /k/ platform
+              try {
+                logger.info('Album scan: Opening item viewer for: ' + (itemMid || 'unknown'));
+                badge.innerText = 'Processing... ' + (downloaded + 1) + '/' + total;
+                
+                const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
+                opener && opener.click();
+                await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
+                
+                // Wait for download button to appear and click it
+                let downloadBtn = null;
+                let attempts = 0;
+                while (!downloadBtn && attempts < 20) {
+                  downloadBtn = document.querySelector('.media-viewer-whole .tel-download, .ckin__player .tel-download');
+                  if (!downloadBtn) {
+                    await new Promise((r) => setTimeout(r, 100));
+                    attempts++;
+                  } else {
+                    break;
+                  }
+                }
+                
+                if (downloadBtn) {
+                  logger.info('Album scan: Found download button, clicking it');
+                  downloadBtn.click();
+                  // Wait for download to start and queue properly
+                  await new Promise((r) => setTimeout(r, 2000));
+                  if (itemMid) {
+                    state.items = state.items || {};
+                    state.items[itemMid] = true;
+                    if (albumMid) setAlbumState(albumMid, state);
+                  }
+                  downloaded++;
+                  badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+                } else {
+                  logger.error('Album scan: Download button not found for item: ' + (itemMid || 'unknown'));
+                }
+                
+                // Close viewer
+                try {
+                  const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
+                  if (closeBtn) {
+                    closeBtn.click();
+                  } else {
+                    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                  }
+                } catch (e) {}
+                
+                await new Promise((r) => setTimeout(r, 800));
+              } catch (e) {
+                logger.error('Album scan: Error processing video item: ' + (e?.message || e));
+                downloaded++;
+                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+              }
             }
           } else {
             // Image handling
@@ -1655,10 +1686,24 @@
   // Force redownload helper: re-download items regardless of storage and override only those re-downloaded
   const forceRedownloadAlbum = async (album, albumMid) => {
     try {
+      // Get albumMid if not provided: for /k/ it's data-mid on the album, for /a/ it's data-album-main-id on .bottom-marker
+      if (!albumMid) {
+        albumMid = album.getAttribute && album.getAttribute('data-mid');
+        if (!albumMid) {
+          const marker = album.querySelector && album.querySelector('.bottom-marker');
+          albumMid = marker && marker.getAttribute && marker.getAttribute('data-album-main-id');
+        }
+      }
+      
       const state = albumMid ? getAlbumState(albumMid) : { status: null, items: {} };
       state.items = state.items || {};
 
+      // Get album items - handle both /a/ and /k/ structures
       let albumItems = Array.from(album.querySelectorAll('.album-item.grouped-item'));
+      if (albumItems.length === 0) {
+        // Try /a/ structure: .album-item-select-wrapper > .media-inner
+        albumItems = Array.from(album.querySelectorAll('.album-item-select-wrapper .media-inner'));
+      }
       if (albumItems.length === 0) {
         const attach = album.querySelector('.attachment, .album-item, .album-item-media, .media-container');
         if (attach) albumItems = [attach];
@@ -1669,7 +1714,12 @@
       const badge = album.querySelector('.tel-album-scanned-badge');
 
       for (const item of albumItems) {
-        const itemMid = (item.getAttribute && item.getAttribute('data-mid')) || null;
+        // For /a/, get itemMid from data-message-id of the media-inner element itself
+        // For /k/, get it from data-mid
+        let itemMid = item.getAttribute && item.getAttribute('data-mid');
+        if (!itemMid && item.id && item.id.startsWith('album-media-message-')) {
+          itemMid = item.id.replace('album-media-message-', '');
+        }
         // Identify video by presence of .video-time anywhere inside the item or a <video> element
         const isVideo = !!(item.querySelector('.video-time') || item.querySelector('video'));
 
@@ -1707,57 +1757,69 @@
 
         // Video — open viewer and click download button
         if (isVideo) {
-          try {
-            logger.info('Redownload: Opening item viewer for: ' + (itemMid || 'unknown'));
-            if (badge) badge.innerText = 'Redownloading... ' + (downloaded + 1) + '/' + total;
-            
-            const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
-            opener && opener.click();
-            await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
-            
-            // Wait for download button to appear and click it
-            let downloadBtn = null;
-            let attempts = 0;
-            while (!downloadBtn && attempts < 20) {
-              downloadBtn = document.querySelector('.media-viewer-whole .tel-download, .ckin__player .tel-download');
-              if (!downloadBtn) {
-                await new Promise((r) => setTimeout(r, 100));
-                attempts++;
-              } else {
-                break;
-              }
+          // Skip video download for /a/ webapp
+          if (location.pathname.startsWith('/a/')) {
+            logger.info('Redownload: Skipping video for /a/ platform: ' + (itemMid || 'unknown'));
+            if (itemMid) {
+              state.items[itemMid] = true;
+              if (albumMid) setAlbumState(albumMid, state);
             }
-            
-            if (downloadBtn) {
-              logger.info('Redownload: Found download button, clicking it');
-              downloadBtn.click();
-              // Wait for download to start and queue properly
-              await new Promise((r) => setTimeout(r, 2000));
-              if (itemMid) {
-                state.items[itemMid] = true;
-                if (albumMid) setAlbumState(albumMid, state);
-              }
-              downloaded++;
-              if (badge) badge.innerText = 'Redownloading... ' + downloaded + '/' + total;
-            } else {
-              logger.error('Redownload: Download button not found for item: ' + (itemMid || 'unknown'));
-            }
-            
-            // Close viewer
-            try {
-              const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
-              if (closeBtn) {
-                closeBtn.click();
-              } else {
-                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-              }
-            } catch (e) {}
-            
-            await new Promise((r) => setTimeout(r, 800));
-          } catch (e) {
-            logger.error('Redownload: Error processing video item: ' + (e?.message || e));
             downloaded++;
             if (badge) badge.innerText = 'Redownloading... ' + downloaded + '/' + total;
+          } else {
+            // Video download for /k/ platform
+            try {
+              logger.info('Redownload: Opening item viewer for: ' + (itemMid || 'unknown'));
+              if (badge) badge.innerText = 'Redownloading... ' + (downloaded + 1) + '/' + total;
+              
+              const opener = item.querySelector('a, .album-item-media, .media-container, .media-photo, img, .thumbnail, .canvas-thumbnail') || item;
+              opener && opener.click();
+              await new Promise((r) => setTimeout(r, 500)); // Wait for viewer to open
+              
+              // Wait for download button to appear and click it
+              let downloadBtn = null;
+              let attempts = 0;
+              while (!downloadBtn && attempts < 20) {
+                downloadBtn = document.querySelector('.media-viewer-whole .tel-download, .ckin__player .tel-download');
+                if (!downloadBtn) {
+                  await new Promise((r) => setTimeout(r, 100));
+                  attempts++;
+                } else {
+                  break;
+                }
+              }
+              
+              if (downloadBtn) {
+                logger.info('Redownload: Found download button, clicking it');
+                downloadBtn.click();
+                // Wait for download to start and queue properly
+                await new Promise((r) => setTimeout(r, 2000));
+                if (itemMid) {
+                  state.items[itemMid] = true;
+                  if (albumMid) setAlbumState(albumMid, state);
+                }
+                downloaded++;
+                if (badge) badge.innerText = 'Redownloading... ' + downloaded + '/' + total;
+              } else {
+                logger.error('Redownload: Download button not found for item: ' + (itemMid || 'unknown'));
+              }
+              
+              // Close viewer
+              try {
+                const closeBtn = document.querySelector('#MediaViewer button[aria-label="Close"], #MediaViewer button[title="Close"], .media-viewer-whole .close');
+                if (closeBtn) {
+                  closeBtn.click();
+                } else {
+                  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                }
+              } catch (e) {}
+              
+              await new Promise((r) => setTimeout(r, 800));
+            } catch (e) {
+              logger.error('Redownload: Error processing video item: ' + (e?.message || e));
+              downloaded++;
+              if (badge) badge.innerText = 'Redownloading... ' + downloaded + '/' + total;
+            }
           }
         }
       }
@@ -1804,9 +1866,127 @@
   };
 
   // Album scanning & badge download feature
-  // When a `.media-photo` is clicked inside an `.is-album` parent, mark the album with
-  // a clickable "Scanned" badge that downloads all media inside that album.
-  const addAlbumScanFeature = () => {
+  // Handler untuk /a/ webapp (uses .Message.is-album, data-mid di .bottom-marker)
+  const addAlbumScanFeature_A = () => {
+    document.body.addEventListener('click', (e) => {
+      try {
+        const clicked = e.target;
+        // Accept clicks on images or play icons
+        let target = clicked.closest && (
+          clicked.closest('.media-inner') ||
+          clicked.closest('.album-item-select-wrapper') ||
+          clicked.closest('img.thumbnail') ||
+          clicked.closest('i.icon-large-play') ||
+          clicked.closest('img')
+        );
+        if (!target) return;
+
+        // Find the album container
+        let album = target.closest && target.closest('.Message.is-album');
+        if (!album) return;
+
+        // Get album mid from .bottom-marker data-album-main-id
+        const marker = album.querySelector('.bottom-marker');
+        const albumMid = marker && marker.getAttribute('data-album-main-id');
+        if (!albumMid) return;
+
+        // Create or update badge and mark scanned
+        createBadgeForAlbum(album, 'scanned');
+        const st = getAlbumState(albumMid);
+        st.status = st.status || 'scanned';
+        setAlbumState(albumMid, st);
+      } catch (err) {
+        logger.error(err?.message || err);
+      }
+    }, true);
+
+    // Restore saved badges for /a/ - initial load
+    const restoreAllSavedBadgesA = () => {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(ALBUM_STORAGE_KEY_BASE + '_')) {
+            const albumMid = key.replace(ALBUM_STORAGE_KEY_BASE + '_', '');
+            const marker = document.querySelector(`[data-album-main-id="${albumMid}"]`);
+            if (marker) {
+              const album = marker.closest('.Message.is-album');
+              if (album) {
+                const existing = album.querySelector('.tel-album-scanned-badge');
+                if (!existing) {
+                  createBadgeForAlbum(album);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        logger.error('Error restoring badges for /a/: ' + (e?.message || e));
+      }
+    };
+
+    // Initial restore on page load
+    restoreAllSavedBadgesA();
+    
+    // Periodically try to restore badges in case DOM loads slowly for /a/
+    let restoreAttempts = 0;
+    const restoreInterval = setInterval(() => {
+      restoreAttempts++;
+      if (restoreAttempts > 10) {
+        clearInterval(restoreInterval);
+        return;
+      }
+      restoreAllSavedBadgesA();
+    }, 500);
+
+    // Observe DOM for new albums in /a/
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        // Check for newly added .Message.is-album elements
+        for (const node of m.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          
+          // Direct match
+          if (node.matches && node.matches('.Message.is-album')) {
+            const marker = node.querySelector('.bottom-marker');
+            const albumMid = marker && marker.getAttribute('data-album-main-id');
+            if (albumMid && localStorage.getItem(`${ALBUM_STORAGE_KEY_BASE}_${albumMid}`)) {
+              createBadgeForAlbum(node);
+            }
+          }
+          
+          // Scan descendants for .Message.is-album
+          const albums = node.querySelectorAll && node.querySelectorAll('.Message.is-album');
+          if (albums && albums.length) {
+            albums.forEach((album) => {
+              const marker = album.querySelector('.bottom-marker');
+              const albumMid = marker && marker.getAttribute('data-album-main-id');
+              if (albumMid && localStorage.getItem(`${ALBUM_STORAGE_KEY_BASE}_${albumMid}`)) {
+                createBadgeForAlbum(album);
+              }
+            });
+          }
+        }
+        
+        // Handle attribute changes on .bottom-marker
+        if (m.type === 'attributes' && m.target instanceof Element) {
+          const el = m.target;
+          if (el.matches && el.matches('.bottom-marker')) {
+            const album = el.closest('.Message.is-album');
+            if (album) {
+              const albumMid = el.getAttribute('data-album-main-id');
+              if (albumMid && localStorage.getItem(`${ALBUM_STORAGE_KEY_BASE}_${albumMid}`)) {
+                createBadgeForAlbum(album);
+              }
+            }
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-album-main-id'] });
+  };
+
+  // Handler untuk /k/ webapp (original - no changes)
+  const addAlbumScanFeature_K = () => {
     document.body.addEventListener('click', (e) => {
       try {
         const clicked = e.target;
@@ -1900,6 +2080,15 @@
       }
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-mid'] });
+  };
+
+  // Choose handler berdasarkan platform
+  const addAlbumScanFeature = () => {
+    if (location.pathname.startsWith('/a/')) {
+      addAlbumScanFeature_A();
+    } else {
+      addAlbumScanFeature_K();
+    }
   };
   // Perform one-time migration and then initialize features
   migrateAlbumStates();
