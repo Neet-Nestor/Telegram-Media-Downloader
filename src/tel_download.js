@@ -48,10 +48,10 @@
       return logBuffer.slice(-count);
     },
   };
-
-  // Unicode values for icons
-  const DOWNLOAD_ICON = "\uE95F";
-  const FORWARD_ICON = "\uE97B";
+  // Unicode values for icons (used in /k/ app)
+  // https://github.com/morethanwords/tweb/blob/master/src/icons.ts
+  const DOWNLOAD_ICON = "\ue977";
+  const FORWARD_ICON = "\ue995";
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
 
   // Configuration constants
