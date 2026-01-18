@@ -1359,12 +1359,25 @@
         state.status = initStatus;
         if (albumMid) setAlbumState(albumMid, state);
       }
+      
+      let badge = existing;
+      let badgeWrap = existing ? existing.parentNode : null;
+      
       if (existing) {
-        const label = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
+        logger.info(`Found existing badge for albumMid: ${albumMid}`);
+        const label = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Download');
         existing.innerText = label;
+        
+        // Remove existing listeners by cloning the element
+        if (!existing.dataset.listenerAttached) {
+          const newBadge = existing.cloneNode(true);
+          existing.parentNode.replaceChild(newBadge, existing);
+          badge = newBadge;
+        }
+        
         // Ensure it's inside a badge wrapper for proper layout
         try {
-          let wrap = existing.parentNode;
+          let wrap = badge.parentNode;
           if (!wrap || !wrap.classList || !wrap.classList.contains('tel-album-badge-wrap')) {
             wrap = document.createElement('div');
             wrap.className = 'tel-album-badge-wrap';
@@ -1375,43 +1388,48 @@
             wrap.style.display = 'flex';
             wrap.style.alignItems = 'center';
             wrap.style.gap = '8px';
-            try { existing.remove(); } catch (e) {}
-            wrap.appendChild(existing);
+            try { badge.remove(); } catch (e) {}
+            wrap.appendChild(badge);
             album.appendChild(wrap);
+            badgeWrap = wrap;
+          } else {
+            badgeWrap = wrap;
           }
         } catch (e) {}
-        return existing;
+      } else {
+        // Create new badge
+        badge = document.createElement('button');
+        badge.className = 'tel-album-scanned-badge';
+        badge.title = 'Download album';
+        // badge will be placed inside a wrapper for correct layout
+        badge.style.padding = '4px 8px';
+        badge.style.borderRadius = '12px';
+        badge.style.background = '#6093B5';
+        badge.style.color = 'white';
+        badge.style.border = 'none';
+        badge.style.cursor = 'pointer';
+        badge.style.display = 'inline-flex';
+        badge.style.alignItems = 'center';
+        badge.style.justifyContent = 'center';
+        badge.style.whiteSpace = 'nowrap';
+        badge.style.boxSizing = 'border-box';
+        badge.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Download');
+        
+        logger.info(`Creating new badge with text: ${badge.innerText}, albumMid: ${albumMid}`);
+
+        // create wrapper and append badge into it
+        badgeWrap = document.createElement('div');
+        badgeWrap.className = 'tel-album-badge-wrap';
+        badgeWrap.style.position = 'absolute';
+        badgeWrap.style.top = '8px';
+        badgeWrap.style.right = '8px';
+        badgeWrap.style.zIndex = 9999;
+        badgeWrap.style.display = 'flex';
+        badgeWrap.style.alignItems = 'center';
+        badgeWrap.style.gap = '8px';
+        badgeWrap.appendChild(badge);
+        album.appendChild(badgeWrap);
       }
-
-      const badge = document.createElement('button');
-      badge.className = 'tel-album-scanned-badge';
-      badge.title = 'Download album';
-      // badge will be placed inside a wrapper for correct layout
-      badge.style.padding = '4px 8px';
-      badge.style.borderRadius = '12px';
-      badge.style.background = '#6093B5';
-      badge.style.color = 'white';
-      badge.style.border = 'none';
-      badge.style.cursor = 'pointer';
-      badge.style.display = 'inline-flex';
-      badge.style.alignItems = 'center';
-      badge.style.justifyContent = 'center';
-      badge.style.whiteSpace = 'nowrap';
-      badge.style.boxSizing = 'border-box';
-      badge.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
-
-      // create wrapper and append badge into it
-      const badgeWrap = document.createElement('div');
-      badgeWrap.className = 'tel-album-badge-wrap';
-      badgeWrap.style.position = 'absolute';
-      badgeWrap.style.top = '8px';
-      badgeWrap.style.right = '8px';
-      badgeWrap.style.zIndex = 9999;
-      badgeWrap.style.display = 'flex';
-      badgeWrap.style.alignItems = 'center';
-      badgeWrap.style.gap = '8px';
-      badgeWrap.appendChild(badge);
-      album.appendChild(badgeWrap);
 
       const updateBadgeText = (s) => {
         try {
@@ -1496,21 +1514,26 @@
 
       badge.addEventListener('click', async (ev) => {
         ev.stopPropagation();
+        logger.info('Badge clicked! Starting album download...');
         badge.disabled = true;
         try {
         // Gather album items; handle both /a/ and /k/ structures
         let albumItems = Array.from(album.querySelectorAll('.album-item.grouped-item'));
+        logger.info(`Found ${albumItems.length} .album-item.grouped-item items`);
         if (albumItems.length === 0) {
           // Try /a/ structure: .album-item-select-wrapper > .media-inner
           albumItems = Array.from(album.querySelectorAll('.album-item-select-wrapper .media-inner'));
+          logger.info(`Found ${albumItems.length} .media-inner items for /a/`);
         }
         if (albumItems.length === 0) {
           const attach = album.querySelector('.attachment, .album-item, .album-item-media, .media-container');
           if (attach) albumItems = [attach];
+          logger.info(`Fallback: Found ${albumItems.length} attachment items`);
         }
 
         const total = albumItems.length;
         let downloaded = 0;
+        logger.info(`Total items to process: ${total}`);
 
         // load latest state
         state = albumMid ? getAlbumState(albumMid) : state;
@@ -1526,10 +1549,12 @@
             itemMid = album.getAttribute && album.getAttribute('data-mid');
           }
           
+          logger.info(`Processing item with mid: ${itemMid}`);
+          
           if (itemMid && state.items && state.items[itemMid]) {
             logger.info('Album scan: Skipping already downloaded item: ' + itemMid);
             downloaded++;
-            badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+            badge.innerText = 'Downloading... ' + downloaded + '/' + total;
             continue;
           }
 
@@ -1545,7 +1570,7 @@
                 if (albumMid) setAlbumState(albumMid, state);
               }
               downloaded++;
-              badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+              badge.innerText = 'Downloading... ' + downloaded + '/' + total;
             } else {
               // Video download for /k/ platform
               try {
@@ -1580,7 +1605,7 @@
                     if (albumMid) setAlbumState(albumMid, state);
                   }
                   downloaded++;
-                  badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+                  badge.innerText = 'Downloading... ' + downloaded + '/' + total;
                 } else {
                   logger.error('Album scan: Download button not found for item: ' + (itemMid || 'unknown'));
                 }
@@ -1599,7 +1624,7 @@
               } catch (e) {
                 logger.error('Album scan: Error processing video item: ' + (e?.message || e));
                 downloaded++;
-                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+                badge.innerText = 'Downloading... ' + downloaded + '/' + total;
               }
             }
           } else {
@@ -1620,14 +1645,15 @@
                   state.items = state.items || {};
                   state.items[itemMid] = true;
                   if (albumMid) setAlbumState(albumMid, state);
+                  logger.info(`Image downloaded, marked item ${itemMid} as done. State: ${JSON.stringify(state.items)}`);
                 }
                 downloaded++;
-                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+                badge.innerText = 'Downloading... ' + downloaded + '/' + total;
                 await new Promise((r) => setTimeout(r, 300));
               } else {
                 logger.info('Album scan: Skipping duplicate image: ' + src);
                 downloaded++;
-                badge.innerText = 'Scanning... ' + downloaded + '/' + total;
+                badge.innerText = 'Downloading... ' + downloaded + '/' + total;
               }
             }
 
@@ -1656,8 +1682,10 @@
         }
 
         // Update album status
-        const finalTotal = album.querySelectorAll('.album-item.grouped-item').length || albumItems.length;
-        const finalDownloaded = Object.keys(state.items || {}).length;
+        logger.info(`State items: ${JSON.stringify(state.items)}`);
+        const finalTotal = total; // Use the total we already calculated
+        const finalDownloaded = Object.keys(state.items || {}).filter(k => state.items[k] === true).length;
+        logger.info(`Album status update: ${finalDownloaded}/${finalTotal} items downloaded`);
         if (finalDownloaded >= finalTotal) {
           state.status = 'downloaded';
         } else if (finalDownloaded > 0) {
@@ -1666,7 +1694,8 @@
           state.status = 'scanned';
         }
         if (albumMid) setAlbumState(albumMid, state);
-        updateBadgeText(state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned'));
+        logger.info(`Album status set to: ${state.status}`);
+        updateBadgeText(state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Download'));
 
         } catch (e) { logger.error('Badge handler error: ' + (e?.message || e)); }
         finally {
@@ -1674,6 +1703,9 @@
           try { if (typeof ensureRedownloadButton === 'function') ensureRedownloadButton(); } catch (e) {}
         }
       });
+
+      // Mark that listener has been attached
+      badge.dataset.listenerAttached = 'true';
 
       // Badge already appended inside wrapper; ensure redownload UI is present when appropriate
       ensureRedownloadButton();
@@ -1831,7 +1863,7 @@
 
       // Update badge text
       const b = album.querySelector('.tel-album-scanned-badge');
-      if (b) b.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Scanned');
+      if (b) b.innerText = state.status === 'downloaded' ? 'Downloaded' : (state.status === 'partial' ? 'Partial downloaded' : 'Download');
       // Ensure redownload button remains when appropriate
       if (b) {
         const existingR = b.parentNode && b.parentNode.querySelector('.tel-album-redownload');
@@ -1868,6 +1900,7 @@
   // Album scanning & badge download feature
   // Handler untuk /a/ webapp (uses .Message.is-album, data-mid di .bottom-marker)
   const addAlbumScanFeature_A = () => {
+    logger.info('Initializing /a/ album scan feature');
     document.body.addEventListener('click', (e) => {
       try {
         const clicked = e.target;
@@ -1888,15 +1921,20 @@
         // Get album mid from .bottom-marker data-album-main-id
         const marker = album.querySelector('.bottom-marker');
         const albumMid = marker && marker.getAttribute('data-album-main-id');
-        if (!albumMid) return;
+        if (!albumMid) {
+          logger.error('/a/ album clicked but no albumMid found');
+          return;
+        }
 
+        logger.info(`/a/ album clicked, albumMid: ${albumMid}`);
         // Create or update badge and mark scanned
         createBadgeForAlbum(album, 'scanned');
         const st = getAlbumState(albumMid);
         st.status = st.status || 'scanned';
         setAlbumState(albumMid, st);
+        logger.info(`/a/ album state saved: ${JSON.stringify(st)}`);
       } catch (err) {
-        logger.error(err?.message || err);
+        logger.error('/a/ click handler error: ' + (err?.message || err));
       }
     }, true);
 
