@@ -1898,7 +1898,7 @@
   };
 
   // Album scanning & badge download feature
-  // Handler untuk /a/ webapp (uses .Message.is-album, data-mid di .bottom-marker)
+  // Handler for /a/ webapp (uses .Message.is-album, data-mid on .bottom-marker)
   const addAlbumScanFeature_A = () => {
     logger.info('Initializing /a/ album scan feature');
     document.body.addEventListener('click', (e) => {
@@ -2023,7 +2023,7 @@
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-album-main-id'] });
   };
 
-  // Handler untuk /k/ webapp (original - no changes)
+  // Handler for /k/ webapp (original - no changes)
   const addAlbumScanFeature_K = () => {
     document.body.addEventListener('click', (e) => {
       try {
@@ -2120,7 +2120,7 @@
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-mid'] });
   };
 
-  // Choose handler berdasarkan platform
+  // Choose handler based on platform
   const addAlbumScanFeature = () => {
     if (location.pathname.startsWith('/a/')) {
       addAlbumScanFeature_A();
