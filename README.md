@@ -7,11 +7,14 @@
 [![GitHub License](https://img.shields.io/github/license/Neet-Nestor/Telegram-Media-Downloader)](./LICENSE)
 [![Greasy Fork Version](https://img.shields.io/greasyfork/v/446342-telegram-media-downloader)](https://greasyfork.org/scripts/446342-telegram-media-downloader)
 [![Greasy Fork Downloads](https://img.shields.io/greasyfork/dt/446342-telegram-media-downloader)](https://greasyfork.org/scripts/446342-telegram-media-downloader)
+[![Discord](https://img.shields.io/badge/Discord-Zovo-blueviolet.svg?logo=discord)](https://discord.gg/zovo)
+[![Website](https://img.shields.io/badge/Website-zovo.one-blue)](https://zovo.one)
 
 </div>
 
-## Overview
-This user script unlocks and enables download of images, GIFs, audios, and videos in Telegram webapps from chats, stories, and even private channels where downloading is disabled or restricted.
+> This user script unlocks and enables download of images, GIFs, audios, and videos in Telegram webapps from chats, stories, and even private channels where downloading is disabled or restricted.
+
+Part of the [Zovo](https://zovo.one) developer tools family.
 
 (Note: some features are only available for specific Telegram webapp version. e.g. Audio message download is only available for the K webapp version.)
 
@@ -149,3 +152,24 @@ Use standard IETF Language Tag (e.g., `es-ES` for Spanish, `ja-JP` for Japanese)
 
 ## Support Author
 If you like this script, you can support me via [Venmo](https://venmo.com/u/NeetNestor) or [buy me a coffee](https://ko-fi.com/neetnestor) :)
+
+
+## See Also
+
+### Related Zovo Repositories
+
+- [web-scraper-lite](https://github.com/theluckystrike/web-scraper-lite) - Free & open source web scraping
+- [chrome-extension-starter-mv3](https://github.com/theluckystrike/chrome-extension-starter-mv3) - Production-ready Chrome extension template
+- [awesome-chrome-extensions-dev](https://github.com/theluckystrike/awesome-chrome-extensions-dev) - Curated list of Chrome extension development resources
+
+### Zovo Chrome Extensions
+
+- [Text Expander Pro](https://chrome.google.com/webstore/detail/text-expander-pro-by-zovo/) - Smart text expansion
+- [Zovo Tab Manager](https://chrome.google.com/webstore/detail/zovo-tab-manager) - Manage tabs efficiently
+
+Visit [zovo.one](https://zovo.one) for more information.
+
+---
+
+Built by [Zovo](https://zovo.one)
+
