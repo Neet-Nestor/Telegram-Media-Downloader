@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器
 // @name:zh-TW   Telegram 受限圖片影片下載器
 // @name:ru      Telegram: загрузчик медиафайлов
-// @version      1.212
+// @version      1.213
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
@@ -285,6 +285,7 @@
     };
 
     const supportsFileSystemAccess =
+      !_batchMode &&
       "showSaveFilePicker" in unsafeWindow &&
       (() => {
         try {
@@ -432,6 +433,7 @@
     };
 
     const supportsFileSystemAccess =
+      !_batchMode &&
       "showSaveFilePicker" in unsafeWindow &&
       (() => {
         try {
@@ -827,6 +829,154 @@
         };
       }
       mediaButtons.prepend(downloadButton);
+    }
+  }, REFRESH_DELAY);
+
+  // ==========================================
+  // Batch Download for WebA Selection Mode
+  // ==========================================
+  let _batchDownloading = false;
+  let _batchMode = false; // When true, skip showSaveFilePicker for all downloads
+
+  const collectSelectedMediaUrls = () => {
+    const urls = [];
+    // 1. Album items (grouped media in a single message)
+    document
+      .querySelectorAll(
+        ".album-item-select-wrapper.is-selected .media-inner"
+      )
+      .forEach((mediaInner) => {
+        const video = mediaInner.querySelector("video.full-media[src]");
+        const img = mediaInner.querySelector("img.thumbnail[src]");
+        if (video && video.src && !video.src.startsWith("blob:")) {
+          urls.push({ type: "video", url: video.src });
+        } else if (img && img.src && !img.src.startsWith("blob:")) {
+          urls.push({ type: "image", url: img.src });
+        }
+      });
+
+    // 2. Single selected messages (non-album)
+    document
+      .querySelectorAll(
+        ".Message.is-selected:not(.is-album)"
+      )
+      .forEach((msg) => {
+        const video = msg.querySelector(
+          ".media-inner video[src], .MediaViewerContent video[src]"
+        );
+        const img = msg.querySelector(
+          ".media-inner img.full-media[src], img.thumbnail[src]"
+        );
+        const audio = msg.querySelector("audio[src]");
+        if (video && video.src && !video.src.startsWith("blob:")) {
+          urls.push({ type: "video", url: video.src });
+        } else if (img && img.src && !img.src.startsWith("blob:")) {
+          urls.push({ type: "image", url: img.src });
+        } else if (audio && audio.src && !audio.src.startsWith("blob:")) {
+          urls.push({ type: "audio", url: audio.src });
+        }
+      });
+
+    return urls;
+  };
+
+  const batchDownload = (mediaItems) => {
+    if (_batchDownloading) {
+      logger.info("Batch download already in progress, skipping.");
+      return;
+    }
+    _batchDownloading = true;
+    _batchMode = true; // Skip showSaveFilePicker for all downloads
+    logger.info(`Starting batch download: ${mediaItems.length} items`);
+
+    let index = 0;
+    const DELAY = 500; // ms between downloads
+
+    const downloadNext = () => {
+      if (index >= mediaItems.length) {
+        _batchDownloading = false;
+        _batchMode = false; // Restore normal mode
+        logger.info("Batch download completed.");
+        return;
+      }
+      const item = mediaItems[index];
+      logger.info(
+        `[${index + 1}/${mediaItems.length}] Downloading ${item.type}`
+      );
+
+      if (item.type === "video") {
+        tel_download_video(item.url);
+      } else if (item.type === "audio") {
+        tel_download_audio(item.url);
+      } else {
+        tel_download_image(item.url);
+      }
+
+      index++;
+      setTimeout(downloadNext, DELAY);
+    };
+
+    downloadNext();
+  };
+
+  setInterval(() => {
+    const isInSelectionMode =
+      document.querySelector(".Message.is-in-selection-mode") !== null;
+    const chatInfo = document.querySelector(
+      ".chat-info-wrapper .ChatInfo .info"
+    );
+    if (!chatInfo) return;
+
+    let btn = document.getElementById("tel-batch-download-btn");
+
+    if (isInSelectionMode) {
+      const selectedCount = document.querySelectorAll(
+        ".Message.is-selected"
+      ).length;
+      if (!btn) {
+        btn = document.createElement("button");
+        btn.id = "tel-batch-download-btn";
+        btn.style.cssText =
+          "margin-left:8px;padding:4px 12px;border-radius:12px;" +
+          "border:none;cursor:pointer;font-size:13px;font-weight:600;" +
+          "color:#fff;background:#3390ec;transition:background 0.2s;";
+        btn.textContent = "📥 Batch Download";
+        btn.onmouseenter = () => {
+          btn.style.background = "#2b7cd3";
+        };
+        btn.onmouseleave = () => {
+          btn.style.background = "#3390ec";
+        };
+        btn.onclick = () => {
+          const mediaItems = collectSelectedMediaUrls();
+          if (mediaItems.length === 0) {
+            btn.textContent = "⚠️ No media found";
+            setTimeout(() => {
+              btn.textContent = "📥 Batch Download";
+            }, 2000);
+            return;
+          }
+          batchDownload(mediaItems);
+          btn.textContent = `⏳ Downloading...`;
+          const checkDone = setInterval(() => {
+            if (!_batchDownloading) {
+              btn.textContent = `✅ Done (${mediaItems.length})`;
+              setTimeout(() => {
+                btn.textContent = "📥 Batch Download";
+              }, 3000);
+              clearInterval(checkDone);
+            }
+          }, 500);
+        };
+        chatInfo.appendChild(btn);
+      }
+      // Update count display
+      if (!_batchDownloading) {
+        const mediaCount = collectSelectedMediaUrls().length;
+        btn.textContent = `📥 Batch Download (${mediaCount} media / ${selectedCount} messages)`;
+      }
+    } else {
+      if (btn) btn.remove();
     }
   }, REFRESH_DELAY);
 
