@@ -152,6 +152,7 @@
     let _next_offset = 0;
     let _total_size = null;
     let _file_extension = "mp4";
+    let hasMetadataFileName = false;
 
     const videoId =
       (Math.random() + 1).toString(36).substring(2, 10) +
@@ -165,8 +166,12 @@
       const metadata = JSON.parse(
         decodeURIComponent(url.split("/")[url.split("/").length - 1])
       );
-      if (metadata.fileName) {
+      if (
+        typeof metadata.fileName === "string" &&
+        metadata.fileName.length > 0
+      ) {
         fileName = metadata.fileName;
+        hasMetadataFileName = true;
       }
     } catch (e) {
       // Invalid JSON string, pass extracting fileName
@@ -191,8 +196,13 @@
             throw new Error("Get non video response with MIME type " + mime);
           }
           _file_extension = mime.split("/")[1];
-          fileName =
-            fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
+          if (!hasMetadataFileName) {
+            const extensionStart = fileName.lastIndexOf(".");
+            fileName =
+              extensionStart >= 0
+                ? fileName.substring(0, extensionStart + 1) + _file_extension
+                : fileName + "." + _file_extension;
+          }
 
           const match = res.headers
             .get("Content-Range")
@@ -268,7 +278,7 @@
       logger.info("Finish downloading blobs", fileName);
       logger.info("Concatenating blobs and downloading...", fileName);
 
-      const blob = new Blob(_blobs, { type: "video/mp4" });
+      const blob = new Blob(_blobs, { type: `video/${_file_extension}` });
       const blobUrl = window.URL.createObjectURL(blob);
 
       logger.info("Final blob size: " + blob.size + " bytes", fileName);
@@ -755,6 +765,25 @@
       }
     }
 
+    const downloadCurrentMedia = () => {
+      const currentAspecter = mediaContainer.querySelector(
+        ".media-viewer-movers .media-viewer-aspecter"
+      );
+      const video = currentAspecter?.querySelector("video");
+      if (video) {
+        const videoUrl = video.currentSrc || video.src;
+        if (videoUrl) {
+          tel_download_video(videoUrl);
+        }
+        return;
+      }
+
+      const imageUrl = currentAspecter?.querySelector("img.thumbnail")?.src;
+      if (imageUrl) {
+        tel_download_image(imageUrl);
+      }
+    };
+
     if (mediaAspecter.querySelector(".ckin__player")) {
       // 1. Video player detected - Video and it has finished initial loading
       // container > .ckin__player > video[src]
@@ -777,9 +806,7 @@
         if (onDownload) {
           downloadButton.onclick = onDownload;
         } else {
-          downloadButton.onclick = () => {
-            tel_download_video(mediaAspecter.querySelector("video").src);
-          };
+          downloadButton.onclick = downloadCurrentMedia;
         }
         brControls.prepend(downloadButton);
       }
@@ -799,9 +826,7 @@
       if (onDownload) {
         downloadButton.onclick = onDownload;
       } else {
-        downloadButton.onclick = () => {
-          tel_download_video(mediaAspecter.querySelector("video").src);
-        };
+        downloadButton.onclick = downloadCurrentMedia;
       }
       mediaButtons.prepend(downloadButton);
     } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
@@ -822,12 +847,16 @@
       if (onDownload) {
         downloadButton.onclick = onDownload;
       } else {
-        downloadButton.onclick = () => {
-          tel_download_image(mediaAspecter.querySelector("img.thumbnail").src);
-        };
+        downloadButton.onclick = downloadCurrentMedia;
       }
       mediaButtons.prepend(downloadButton);
     }
+
+    // Telegram reuses viewer buttons while navigating between media.
+    const downloadHandler = onDownload || downloadCurrentMedia;
+    mediaContainer.querySelectorAll("button.tel-download").forEach((button) => {
+      button.onclick = downloadHandler;
+    });
   }, REFRESH_DELAY);
 
   // Progress bar container setup
