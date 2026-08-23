@@ -162,11 +162,14 @@
     // Some video src is in format:
     // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
     try {
-      const metadata = JSON.parse(
-        decodeURIComponent(url.split("/")[url.split("/").length - 1])
-      );
-      if (metadata.fileName) {
-        fileName = metadata.fileName;
+      const decodedUrl = decodeURIComponent(url);
+      const firstBrace = decodedUrl.indexOf('{');
+      const lastBrace = decodedUrl.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        const metadata = JSON.parse(decodedUrl.substring(firstBrace, lastBrace + 1));
+        if (metadata.fileName) {
+          fileName = metadata.fileName;
+        }
       }
     } catch (e) {
       // Invalid JSON string, pass extracting fileName
