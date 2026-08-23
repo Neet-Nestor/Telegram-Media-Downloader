@@ -138,13 +138,35 @@
     progressBar.querySelector("div").style.width = "100%";
   };
 
-  const AbortProgress = (videoId) => {
-    const progressBar = document
-      .getElementById("tel-downloader-progress-" + videoId)
-      .querySelector("div.progress");
+  const AbortProgress = (videoId, retryCallback) => {
+    const innerContainer = document.getElementById("tel-downloader-progress-" + videoId);
+    if (!innerContainer) return;
+    const progressBar = innerContainer.querySelector("div.progress");
     progressBar.querySelector("p").innerText = "Aborted";
     progressBar.querySelector("div").style.backgroundColor = "#D16666";
     progressBar.querySelector("div").style.width = "100%";
+
+    if (retryCallback && !innerContainer.querySelector(".retry-btn")) {
+      const retryBtn = document.createElement("button");
+      retryBtn.className = "retry-btn";
+      retryBtn.innerText = "Retry / 重试";
+      retryBtn.style.marginTop = "0.4rem";
+      retryBtn.style.width = "100%";
+      retryBtn.style.cursor = "pointer";
+      retryBtn.style.backgroundColor = "#6093B5";
+      retryBtn.style.color = "white";
+      retryBtn.style.border = "none";
+      retryBtn.style.padding = "0.4rem";
+      retryBtn.style.borderRadius = "0.4rem";
+      retryBtn.onclick = () => {
+        retryBtn.remove();
+        progressBar.querySelector("p").innerText = "0%";
+        progressBar.querySelector("div").style.backgroundColor = "#6093B5";
+        progressBar.querySelector("div").style.width = "0%";
+        retryCallback();
+      };
+      innerContainer.appendChild(retryBtn);
+    }
   };
 
   const tel_download_video = (url) => {
@@ -263,7 +285,9 @@
         })
         .catch((reason) => {
           logger.error(reason, currentFileName);
-          AbortProgress(videoId);
+          AbortProgress(videoId, () => {
+            fetchNextPart(_writable, currentFileName);
+          });
         });
     };
 
