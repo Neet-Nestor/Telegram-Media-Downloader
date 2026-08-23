@@ -176,7 +176,7 @@
     }
     logger.info(`URL: ${url}`, fileName);
 
-    const fetchNextPart = (_writable) => {
+    const fetchNextPart = (_writable, currentFileName) => {
       fetch(url, {
         method: "GET",
         headers: {
@@ -194,8 +194,8 @@
             throw new Error("Get non video response with MIME type " + mime);
           }
           _file_extension = mime.split("/")[1];
-          fileName =
-            fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
+          currentFileName =
+            currentFileName.substring(0, currentFileName.indexOf(".") + 1) + _file_extension;
 
           const match = res.headers
             .get("Content-Range")
@@ -206,13 +206,13 @@
           const totalSize = parseInt(match[3]);
 
           if (startOffset !== _next_offset) {
-            logger.error("Gap detected between responses.", fileName);
-            logger.info("Last offset: " + _next_offset, fileName);
-            logger.info("New start offset " + match[1], fileName);
+            logger.error("Gap detected between responses.", currentFileName);
+            logger.info("Last offset: " + _next_offset, currentFileName);
+            logger.info("New start offset " + match[1], currentFileName);
             throw "Gap detected between responses.";
           }
           if (_total_size && totalSize !== _total_size) {
-            logger.error("Total size differs", fileName);
+            logger.error("Total size differs", currentFileName);
             throw "Total size differs";
           }
 
@@ -223,22 +223,22 @@
             `Get response: ${res.headers.get(
               "Content-Length"
             )} bytes data from ${res.headers.get("Content-Range")}`,
-            fileName
+            currentFileName
           );
           logger.info(
             `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`,
-            fileName
+            currentFileName
           );
           updateProgress(
             videoId,
-            fileName,
+            currentFileName,
             ((_next_offset * 100) / _total_size).toFixed(0)
           );
           return res.blob();
         })
         .then((resBlob) => {
           if (_writable !== null) {
-            _writable.write(resBlob).then(() => {});
+            _writable.write(resBlob).then(() => { });
           } else {
             _blobs.push(resBlob);
           }
@@ -249,42 +249,42 @@
           }
 
           if (_next_offset < _total_size) {
-            fetchNextPart(_writable);
+            fetchNextPart(_writable, currentFileName);
           } else {
             if (_writable !== null) {
               _writable.close().then(() => {
-                logger.info("Download finished", fileName);
+                logger.info("Download finished", currentFileName);
               });
             } else {
-              save();
+              save(currentFileName);
             }
             completeProgress(videoId);
           }
         })
         .catch((reason) => {
-          logger.error(reason, fileName);
+          logger.error(reason, currentFileName);
           AbortProgress(videoId);
         });
     };
 
-    const save = () => {
-      logger.info("Finish downloading blobs", fileName);
-      logger.info("Concatenating blobs and downloading...", fileName);
+    const save = (currentFileName) => {
+      logger.info("Finish downloading blobs", currentFileName);
+      logger.info("Concatenating blobs and downloading...", currentFileName);
 
       const blob = new Blob(_blobs, { type: "video/mp4" });
       const blobUrl = window.URL.createObjectURL(blob);
 
-      logger.info("Final blob size: " + blob.size + " bytes", fileName);
+      logger.info("Final blob size: " + blob.size + " bytes", currentFileName);
 
       const a = document.createElement("a");
       document.body.appendChild(a);
       a.href = blobUrl;
-      a.download = fileName;
+      a.download = currentFileName;
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
-      logger.info("Download triggered", fileName);
+      logger.info("Download triggered", currentFileName);
     };
 
     const supportsFileSystemAccess =
@@ -305,8 +305,8 @@
           handle
             .createWritable()
             .then((writable) => {
-              fetchNextPart(writable);
-              createProgressBar(videoId);
+              fetchNextPart(writable, handle.name);
+              createProgressBar(videoId, handle.name);
             })
             .catch((err) => {
               console.error(err.name, err.message);
@@ -318,8 +318,8 @@
           }
         });
     } else {
-      fetchNextPart(null);
-      createProgressBar(videoId);
+      fetchNextPart(null, fileName);
+      createProgressBar(videoId, fileName);
     }
   };
 
@@ -329,7 +329,7 @@
     let _total_size = null;
     const fileName = hashCode(url).toString(36) + ".ogg";
 
-    const fetchNextPart = (_writable) => {
+    const fetchNextPart = (_writable, currentFileName) => {
       fetch(url, {
         method: "GET",
         headers: {
@@ -340,7 +340,7 @@
           if (res.status !== 206 && res.status !== 200) {
             logger.error(
               "Non 200/206 response was received: " + res.status,
-              fileName
+              currentFileName
             );
             return;
           }
@@ -349,7 +349,7 @@
           if (!mime.startsWith("audio/")) {
             logger.error(
               "Get non audio response with MIME type " + mime,
-              fileName
+              currentFileName
             );
             throw "Get non audio response with MIME type " + mime;
           }
@@ -387,51 +387,51 @@
         })
         .then((resBlob) => {
           if (_writable !== null) {
-            _writable.write(resBlob).then(() => {});
+            _writable.write(resBlob).then(() => { });
           } else {
             _blobs.push(resBlob);
           }
         })
         .then(() => {
           if (_next_offset < _total_size) {
-            fetchNextPart(_writable);
+            fetchNextPart(_writable, currentFileName);
           } else {
             if (_writable !== null) {
               _writable.close().then(() => {
-                logger.info("Download finished", fileName);
+                logger.info("Download finished", currentFileName);
               });
             } else {
-              save();
+              save(currentFileName);
             }
           }
         })
         .catch((reason) => {
-          logger.error(reason, fileName);
+          logger.error(reason, currentFileName);
         });
     };
 
-    const save = () => {
+    const save = (currentFileName) => {
       logger.info(
         "Finish downloading blobs. Concatenating blobs and downloading...",
-        fileName
+        currentFileName
       );
 
       let blob = new Blob(_blobs, { type: "audio/ogg" });
       const blobUrl = window.URL.createObjectURL(blob);
 
-      logger.info("Final blob size in bytes: " + blob.size, fileName);
+      logger.info("Final blob size in bytes: " + blob.size, currentFileName);
 
       blob = 0;
 
       const a = document.createElement("a");
       document.body.appendChild(a);
       a.href = blobUrl;
-      a.download = fileName;
+      a.download = currentFileName;
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
 
-      logger.info("Download triggered", fileName);
+      logger.info("Download triggered", currentFileName);
     };
 
     const supportsFileSystemAccess =
@@ -452,7 +452,7 @@
           handle
             .createWritable()
             .then((writable) => {
-              fetchNextPart(writable);
+              fetchNextPart(writable, handle.name);
             })
             .catch((err) => {
               console.error(err.name, err.message);
@@ -464,7 +464,7 @@
           }
         });
     } else {
-      fetchNextPart(null);
+      fetchNextPart(null, fileName);
     }
   };
 
