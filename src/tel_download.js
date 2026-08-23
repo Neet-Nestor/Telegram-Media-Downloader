@@ -352,6 +352,10 @@
     let _next_offset = 0;
     let _total_size = null;
     const fileName = hashCode(url).toString(36) + ".ogg";
+    const videoId =
+      (Math.random() + 1).toString(36).substring(2, 10) +
+      "_" +
+      Date.now().toString();
 
     const fetchNextPart = (_writable, currentFileName) => {
       fetch(url, {
@@ -401,11 +405,18 @@
             _next_offset = endOffset + 1;
             _total_size = totalSize;
           } finally {
-            logger.info(
-              `Get response: ${res.headers.get(
-                "Content-Length"
-              )} bytes data from ${res.headers.get("Content-Range")}`
-            );
+            if (_total_size) {
+              logger.info(
+                `Get response: ${res.headers.get(
+                  "Content-Length"
+                )} bytes data from ${res.headers.get("Content-Range")}`
+              );
+              updateProgress(
+                videoId,
+                currentFileName,
+                ((_next_offset * 100) / _total_size).toFixed(0)
+              );
+            }
             return res.blob();
           }
         })
@@ -427,10 +438,14 @@
             } else {
               save(currentFileName);
             }
+            completeProgress(videoId);
           }
         })
         .catch((reason) => {
           logger.error(reason, currentFileName);
+          AbortProgress(videoId, () => {
+            fetchNextPart(_writable, currentFileName);
+          });
         });
     };
 
@@ -477,6 +492,7 @@
             .createWritable()
             .then((writable) => {
               fetchNextPart(writable, handle.name);
+              createProgressBar(videoId, handle.name);
             })
             .catch((err) => {
               console.error(err.name, err.message);
@@ -489,6 +505,7 @@
         });
     } else {
       fetchNextPart(null, fileName);
+      createProgressBar(videoId, fileName);
     }
   };
 
@@ -693,9 +710,9 @@
         downloadButtonPinnedAudio.onclick = (e) => {
           e.stopPropagation();
           if (isAudio) {
-              tel_download_audio(link);
+            tel_download_audio(link);
           } else {
-              tel_download_video(link);
+            tel_download_video(link);
           }
         };
         downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
