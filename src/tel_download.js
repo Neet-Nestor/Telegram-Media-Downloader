@@ -40,7 +40,7 @@
   const FORWARD_ICON = "\ue99a";
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
-  const MAX_AUTO_RETRIES = 3;
+  const MAX_AUTO_RETRIES = 10;
   const AUTO_RETRY_DELAY_MS = 30000;
   const hashCode = (s) => {
     var h = 0,
