@@ -40,6 +40,8 @@
   const FORWARD_ICON = "\ue99a";
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
+  const MAX_AUTO_RETRIES = 3;
+  const AUTO_RETRY_DELAY_MS = 30000;
   const hashCode = (s) => {
     var h = 0,
       l = s.length,
@@ -174,6 +176,7 @@
     let _next_offset = 0;
     let _total_size = null;
     let _file_extension = "mp4";
+    let _autoRetryCount = 0;
 
     const videoId =
       (Math.random() + 1).toString(36).substring(2, 10) +
@@ -259,6 +262,7 @@
           return res.blob();
         })
         .then((resBlob) => {
+          _autoRetryCount = 0;
           if (_writable !== null) {
             _writable.write(resBlob).then(() => { });
           } else {
@@ -285,9 +289,22 @@
         })
         .catch((reason) => {
           logger.error(reason, currentFileName);
-          AbortProgress(videoId, () => {
-            fetchNextPart(_writable, currentFileName);
-          });
+          if (_autoRetryCount < MAX_AUTO_RETRIES) {
+            _autoRetryCount++;
+            logger.info(
+              `Auto-retrying (${_autoRetryCount}/${MAX_AUTO_RETRIES}) in ${AUTO_RETRY_DELAY_MS / 1000
+              }s...`,
+              currentFileName
+            );
+            setTimeout(() => {
+              fetchNextPart(_writable, currentFileName);
+            }, AUTO_RETRY_DELAY_MS);
+          } else {
+            AbortProgress(videoId, () => {
+              _autoRetryCount = 0;
+              fetchNextPart(_writable, currentFileName);
+            });
+          }
         });
     };
 
@@ -351,6 +368,7 @@
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
+    let _autoRetryCount = 0;
     const fileName = hashCode(url).toString(36) + ".ogg";
     const videoId =
       (Math.random() + 1).toString(36).substring(2, 10) +
@@ -421,6 +439,7 @@
           }
         })
         .then((resBlob) => {
+          _autoRetryCount = 0;
           if (_writable !== null) {
             _writable.write(resBlob).then(() => { });
           } else {
@@ -443,9 +462,22 @@
         })
         .catch((reason) => {
           logger.error(reason, currentFileName);
-          AbortProgress(videoId, () => {
-            fetchNextPart(_writable, currentFileName);
-          });
+          if (_autoRetryCount < MAX_AUTO_RETRIES) {
+            _autoRetryCount++;
+            logger.info(
+              `Auto-retrying (${_autoRetryCount}/${MAX_AUTO_RETRIES}) in ${AUTO_RETRY_DELAY_MS / 1000
+              }s...`,
+              currentFileName
+            );
+            setTimeout(() => {
+              fetchNextPart(_writable, currentFileName);
+            }, AUTO_RETRY_DELAY_MS);
+          } else {
+            AbortProgress(videoId, () => {
+              _autoRetryCount = 0;
+              fetchNextPart(_writable, currentFileName);
+            });
+          }
         });
     };
 
