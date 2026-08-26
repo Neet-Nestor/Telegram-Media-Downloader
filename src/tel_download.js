@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器
 // @name:zh-TW   Telegram 受限圖片影片下載器
 // @name:ru      Telegram: загрузчик медиафайлов
-// @version      1.220
+// @version      1.222
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @updateURL    https://raw.githubusercontent.com/charzl/Telegram-Media-Downloader/main/src/tel_download.js
 // @downloadURL  https://raw.githubusercontent.com/charzl/Telegram-Media-Downloader/main/src/tel_download.js
@@ -19,6 +19,8 @@
 // @match        https://web.telegram.org/*
 // @match        https://webk.telegram.org/*
 // @match        https://webz.telegram.org/*
+// @match        https://t.me/*
+// @match        https://*.t.me/*
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
 // @grant        unsafeWindow
 // ==/UserScript==
@@ -39,23 +41,22 @@
   };
 
   // Unicode values for icons (used in /k/ app)
-  // https://github.com/morethanwords/tweb/blob/master/src/icons.ts
   const DOWNLOAD_ICON = "\ue979";
   const FORWARD_ICON = "\ue99a";
   const contentRangeRegex = /^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i;
-  const REFRESH_DELAY = 500;
+  const REFRESH_DELAY = 600;
   const MAX_AUTO_RETRIES = 4;
   const RETRY_DELAYS_MS = [1000, 2000, 3500, 5000];
 
   // 配置项
   const CONFIG = {
     // 是否启用系统另存为弹窗 (FileSystem Access API)
-    // 注意：如果是外挂移动硬盘(USB/exFAT/NTFS)或网络盘，浏览器 FileSystem API 常因 .crswap 临时文件锁或权限回收导致写入失败
-    // 设为 false 将使用内存 Blob 缓冲并通过浏览器原生下载管道保存，外挂硬盘 100% 稳定兼容
+    // 设为 false 将使用原生 Blob 缓冲下载管道，彻底解决外挂硬盘 (USB/exFAT/NTFS) 写入失败与文件锁问题
     USE_FILE_PICKER: false,
   };
 
   const hashCode = (s) => {
+    if (!s) return Math.random().toString(36).substring(2, 8);
     let h = 0, l = s.length, i = 0;
     if (l > 0) {
       while (i < l) {
@@ -83,6 +84,26 @@
     if (m < 60) return `${m}m ${s}s`;
     const h = Math.floor(m / 60);
     return `${h}h ${m % 60}m`;
+  };
+
+  const getVideoSrc = (container) => {
+    if (!container) return null;
+    const video = container.tagName === "VIDEO" ? container : container.querySelector("video");
+    if (!video) return null;
+    return (
+      video.currentSrc ||
+      video.src ||
+      video.querySelector("source")?.src ||
+      video.getAttribute("src") ||
+      null
+    );
+  };
+
+  const getImageSrc = (container) => {
+    if (!container) return null;
+    const img = container.tagName === "IMG" ? container : container.querySelector("img");
+    if (!img) return null;
+    return img.currentSrc || img.src || img.getAttribute("src") || null;
   };
 
   class SpeedTracker {
@@ -496,6 +517,13 @@
   // Core Download Engine
   // ==========================
   const tel_download_video = (url) => {
+    if (!url) {
+      const tempId = "err_" + Date.now();
+      createProgressBar(tempId, "Video Stream");
+      abortProgress(tempId, "未检测到视频流，请先点击播放视频");
+      return;
+    }
+
     const taskId = (Math.random() + 1).toString(36).substring(2, 10) + "_" + Date.now();
     let _blobs = [];
     let _committed_offset = 0;
@@ -566,6 +594,23 @@
         completeProgress(taskId, blob.size);
       }
     };
+
+    // Fast path for blob: URLs
+    if (url.startsWith("blob:")) {
+      logger.info("Direct Blob URL detected, fetching complete blob...", fileName);
+      fetch(url, { signal: _abortController.signal })
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`Blob fetch HTTP ${res.status}`);
+          const blob = await res.blob();
+          _blobs = [blob];
+          triggerSave(fileName);
+        })
+        .catch((err) => {
+          logger.error("Blob fetch error: " + err.message, fileName);
+          abortProgress(taskId, "Blob fetch error: " + err.message, () => tel_download_video(url));
+        });
+      return;
+    }
 
     const fetchNextChunk = () => {
       if (_isCancelled) return;
@@ -770,6 +815,7 @@
   };
 
   const tel_download_audio = (url) => {
+    if (!url) return;
     const taskId = (Math.random() + 1).toString(36).substring(2, 10) + "_" + Date.now();
     let _blobs = [];
     let _committed_offset = 0;
@@ -819,6 +865,19 @@
         completeProgress(taskId, blob.size);
       }
     };
+
+    if (url.startsWith("blob:")) {
+      fetch(url, { signal: _abortController.signal })
+        .then(async (res) => {
+          const blob = await res.blob();
+          _blobs = [blob];
+          triggerSave(fileName);
+        })
+        .catch((err) => {
+          abortProgress(taskId, "Audio blob error: " + err.message);
+        });
+      return;
+    }
 
     const fetchNextChunk = () => {
       if (_isCancelled) return;
@@ -930,6 +989,7 @@
   };
 
   const tel_download_image = (imageUrl) => {
+    if (!imageUrl) return;
     const taskId = (Math.random() + 1).toString(36).substring(2, 10) + "_" + Date.now();
     const fileName = (Math.random() + 1).toString(36).substring(2, 10) + ".jpeg";
 
@@ -954,15 +1014,37 @@
     logger.info("Image download triggered", fileName);
   };
 
-  logger.info("Initialized with advanced progress and robust retry engine");
+  logger.info("Initialized with advanced progress, multi-channel watchers and robust retry engine");
 
   // ============================================
   // DOM Observer / Button Injectors
   // ============================================
 
-  // For WebZ / WebA (/a/)
+  // Helper to safely trigger video download with dynamic fallback
+  const triggerVideoDownloadFromContainer = (container) => {
+    let src = getVideoSrc(container);
+    if (!src) {
+      // If video element exists but src is not loaded yet, try to trigger load/play
+      const video = container.querySelector("video") || container;
+      if (video && typeof video.play === "function") {
+        video.play().then(() => video.pause()).catch(() => {});
+        src = getVideoSrc(container);
+      }
+    }
+    if (src) {
+      tel_download_video(src);
+    } else {
+      const tempId = "notice_" + Date.now();
+      createProgressBar(tempId, "Video Player");
+      abortProgress(tempId, "请先点击播放视频，缓冲后再点下载", () => {
+        triggerVideoDownloadFromContainer(container);
+      });
+    }
+  };
+
+  // 1. For WebZ / WebA (/a/ and webz)
   setInterval(() => {
-    // Stories
+    // Stories in /a/
     const storiesContainer = document.getElementById("StoryViewer");
     if (storiesContainer) {
       const createDownloadButton = () => {
@@ -974,17 +1056,15 @@
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
-        downloadButton.onclick = () => {
-          const video = storiesContainer.querySelector("video");
-          const videoSrc = video?.src || video?.currentSrc || video?.querySelector("source")?.src;
+        downloadButton.onclick = (e) => {
+          e.stopPropagation();
+          const videoSrc = getVideoSrc(storiesContainer);
           if (videoSrc) {
             tel_download_video(videoSrc);
           } else {
             const images = storiesContainer.querySelectorAll("img.PVZ8TOWS");
-            if (images.length > 0) {
-              const imageSrc = images[images.length - 1]?.src;
-              if (imageSrc) tel_download_image(imageSrc);
-            }
+            const imageSrc = images.length > 0 ? images[images.length - 1]?.src : getImageSrc(storiesContainer);
+            if (imageSrc) tel_download_image(imageSrc);
           }
         };
         return downloadButton;
@@ -998,71 +1078,113 @@
       }
     }
 
-    // Media Viewer
+    // Media Viewer in /a/
     const mediaContainer = document.querySelector("#MediaViewer .MediaViewerSlide--active");
     const mediaViewerActions = document.querySelector("#MediaViewer .MediaViewerActions");
-    if (!mediaContainer || !mediaViewerActions) return;
+    if (mediaContainer && mediaViewerActions) {
+      const videoPlayer = mediaContainer.querySelector(".MediaViewerContent > .VideoPlayer") || mediaContainer.querySelector(".VideoPlayer");
+      const img = mediaContainer.querySelector(".MediaViewerContent > div > img") || mediaContainer.querySelector("img");
 
-    const videoPlayer = mediaContainer.querySelector(".MediaViewerContent > .VideoPlayer");
-    const img = mediaContainer.querySelector(".MediaViewerContent > div > img");
-
-    const downloadIcon = document.createElement("i");
-    downloadIcon.className = "icon icon-download";
-    const downloadButton = document.createElement("button");
-    downloadButton.className = "Button smaller translucent-white round tel-download";
-    downloadButton.setAttribute("type", "button");
-    downloadButton.setAttribute("title", "Download");
-    downloadButton.setAttribute("aria-label", "Download");
-
-    if (videoPlayer) {
-      const videoEl = videoPlayer.querySelector("video");
-      const videoUrl = videoEl?.currentSrc || videoEl?.src;
-      if (!videoUrl) return;
-
-      downloadButton.setAttribute("data-tel-download-url", videoUrl);
-      downloadButton.appendChild(downloadIcon);
-      downloadButton.onclick = () => tel_download_video(videoUrl);
-
-      const controls = videoPlayer.querySelector(".VideoPlayerControls");
-      if (controls) {
-        const buttons = controls.querySelector(".buttons");
-        if (buttons && !buttons.querySelector("button.tel-download")) {
-          const spacer = buttons.querySelector(".spacer");
-          if (spacer) spacer.after(downloadButton);
+      if (videoPlayer) {
+        // Controls Download Button
+        const controls = videoPlayer.querySelector(".VideoPlayerControls");
+        if (controls) {
+          const buttons = controls.querySelector(".buttons");
+          if (buttons && !buttons.querySelector("button.tel-download")) {
+            const downloadIcon = document.createElement("i");
+            downloadIcon.className = "icon icon-download";
+            const downloadButton = document.createElement("button");
+            downloadButton.className = "Button smaller translucent-white round tel-download";
+            downloadButton.setAttribute("type", "button");
+            downloadButton.setAttribute("title", "Download");
+            downloadButton.appendChild(downloadIcon);
+            downloadButton.onclick = (e) => {
+              e.stopPropagation();
+              triggerVideoDownloadFromContainer(videoPlayer);
+            };
+            const spacer = buttons.querySelector(".spacer");
+            if (spacer) spacer.after(downloadButton);
+            else buttons.appendChild(downloadButton);
+          }
         }
-      }
 
-      if (mediaViewerActions.querySelector("button.tel-download")) {
-        const telDownloadButton = mediaViewerActions.querySelector("button.tel-download");
-        if (mediaViewerActions.querySelectorAll('button[title="Download"]').length > 1) {
-          telDownloadButton.remove();
-        } else if (telDownloadButton.getAttribute("data-tel-download-url") !== videoUrl) {
-          telDownloadButton.onclick = () => tel_download_video(videoUrl);
-          telDownloadButton.setAttribute("data-tel-download-url", videoUrl);
+        // Topbar Download Button
+        if (!mediaViewerActions.querySelector("button.tel-download")) {
+          const downloadIcon = document.createElement("i");
+          downloadIcon.className = "icon icon-download";
+          const downloadButton = document.createElement("button");
+          downloadButton.className = "Button smaller translucent-white round tel-download";
+          downloadButton.setAttribute("type", "button");
+          downloadButton.setAttribute("title", "Download");
+          downloadButton.appendChild(downloadIcon);
+          downloadButton.onclick = (e) => {
+            e.stopPropagation();
+            triggerVideoDownloadFromContainer(videoPlayer);
+          };
+          mediaViewerActions.prepend(downloadButton);
         }
-      } else if (!mediaViewerActions.querySelector('button[title="Download"]')) {
-        mediaViewerActions.prepend(downloadButton);
-      }
-    } else if (img && img.src) {
-      downloadButton.setAttribute("data-tel-download-url", img.src);
-      downloadButton.appendChild(downloadIcon);
-      downloadButton.onclick = () => tel_download_image(img.src);
-
-      if (mediaViewerActions.querySelector("button.tel-download")) {
-        const telDownloadButton = mediaViewerActions.querySelector("button.tel-download");
-        if (mediaViewerActions.querySelectorAll('button[title="Download"]').length > 1) {
-          telDownloadButton.remove();
-        } else if (telDownloadButton.getAttribute("data-tel-download-url") !== img.src) {
-          telDownloadButton.onclick = () => tel_download_image(img.src);
-          telDownloadButton.setAttribute("data-tel-download-url", img.src);
+      } else if (img && img.src) {
+        if (!mediaViewerActions.querySelector("button.tel-download")) {
+          const downloadIcon = document.createElement("i");
+          downloadIcon.className = "icon icon-download";
+          const downloadButton = document.createElement("button");
+          downloadButton.className = "Button smaller translucent-white round tel-download";
+          downloadButton.setAttribute("type", "button");
+          downloadButton.setAttribute("title", "Download");
+          downloadButton.appendChild(downloadIcon);
+          downloadButton.onclick = (e) => {
+            e.stopPropagation();
+            tel_download_image(img.src);
+          };
+          mediaViewerActions.prepend(downloadButton);
         }
-      } else if (!mediaViewerActions.querySelector('button[title="Download"]')) {
-        mediaViewerActions.prepend(downloadButton);
       }
     }
+
+    // In-Chat Message Videos in /a/
+    const messageVideos = document.querySelectorAll(".Message .media-inner, .Message .VideoPlayer");
+    messageVideos.forEach((msgMedia) => {
+      if (msgMedia.querySelector(".tel-download-chat-btn")) return;
+      const video = msgMedia.querySelector("video");
+      if (!video) return;
+
+      const btn = document.createElement("button");
+      btn.className = "tel-download-chat-btn";
+      btn.title = "Download Video";
+      btn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 14px;
+        opacity: 0.85;
+        transition: opacity 0.2s, transform 0.2s;
+      `;
+      btn.innerHTML = "📥";
+      btn.onmouseenter = () => (btn.style.opacity = "1", btn.style.transform = "scale(1.1)");
+      btn.onmouseleave = () => (btn.style.opacity = "0.85", btn.style.transform = "scale(1)");
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        triggerVideoDownloadFromContainer(msgMedia);
+      };
+      if (getComputedStyle(msgMedia).position === "static") {
+        msgMedia.style.position = "relative";
+      }
+      msgMedia.appendChild(btn);
+    });
   }, REFRESH_DELAY);
 
-  // For WebK (/k/)
+  // 2. For WebK (/k/ and webk)
   setInterval(() => {
     // Pinned Audio / Circle Video
     const pinnedAudio = document.body.querySelector(".pinned-audio");
@@ -1113,9 +1235,9 @@
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
-        downloadButton.onclick = () => {
-          const video = storiesContainer.querySelector("video.media-video");
-          const videoSrc = video?.src || video?.currentSrc || video?.querySelector("source")?.src;
+        downloadButton.onclick = (e) => {
+          e.stopPropagation();
+          const videoSrc = getVideoSrc(storiesContainer);
           if (videoSrc) {
             tel_download_video(videoSrc);
           } else {
@@ -1139,67 +1261,142 @@
 
     // Media Viewer in /k/
     const mediaContainer = document.querySelector(".media-viewer-whole");
-    if (!mediaContainer) return;
+    if (mediaContainer) {
+      const mediaAspecter = mediaContainer.querySelector(".media-viewer-movers .media-viewer-aspecter");
+      const mediaButtons = mediaContainer.querySelector(".media-viewer-topbar .media-viewer-buttons");
 
-    const mediaAspecter = mediaContainer.querySelector(".media-viewer-movers .media-viewer-aspecter");
-    const mediaButtons = mediaContainer.querySelector(".media-viewer-topbar .media-viewer-buttons");
-    if (!mediaAspecter || !mediaButtons) return;
+      if (mediaAspecter && mediaButtons) {
+        // Unhide Telegram's native hidden buttons
+        const hiddenButtons = mediaButtons.querySelectorAll("button.btn-icon.hide");
+        for (const btn of hiddenButtons) {
+          btn.classList.remove("hide");
+          if (btn.textContent === FORWARD_ICON) btn.classList.add("tgico-forward");
+          if (btn.textContent === DOWNLOAD_ICON) btn.classList.add("tgico-download");
+        }
 
-    const hiddenButtons = mediaButtons.querySelectorAll("button.btn-icon.hide");
-    let onDownload = null;
-    for (const btn of hiddenButtons) {
-      btn.classList.remove("hide");
-      if (btn.textContent === FORWARD_ICON) btn.classList.add("tgico-forward");
-      if (btn.textContent === DOWNLOAD_ICON) {
-        btn.classList.add("tgico-download");
-        onDownload = () => btn.click();
+        // Custom Download Button in controls
+        const controls = mediaAspecter.querySelector(".default__controls.ckin__controls");
+        if (controls && !controls.querySelector(".tel-download")) {
+          const brControls = controls.querySelector(".bottom-controls .right-controls");
+          const downloadButton = document.createElement("button");
+          downloadButton.className = "btn-icon default__button tgico-download tel-download";
+          downloadButton.innerHTML = `<span class="tgico">${DOWNLOAD_ICON}</span>`;
+          downloadButton.setAttribute("type", "button");
+          downloadButton.setAttribute("title", "Download");
+          downloadButton.onclick = (e) => {
+            e.stopPropagation();
+            triggerVideoDownloadFromContainer(mediaAspecter);
+          };
+          if (brControls) brControls.prepend(downloadButton);
+        }
+
+        // Custom Download Button in topbar
+        if (!mediaButtons.querySelector(".tel-download-topbar")) {
+          const downloadButton = document.createElement("button");
+          downloadButton.className = "btn-icon tgico-download tel-download tel-download-topbar";
+          downloadButton.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
+          downloadButton.setAttribute("type", "button");
+          downloadButton.setAttribute("title", "Download");
+          downloadButton.onclick = (e) => {
+            e.stopPropagation();
+            const video = mediaAspecter.querySelector("video");
+            if (video) {
+              triggerVideoDownloadFromContainer(mediaAspecter);
+            } else {
+              const img = mediaAspecter.querySelector("img.thumbnail") || mediaAspecter.querySelector("img");
+              if (img && img.src) tel_download_image(img.src);
+            }
+          };
+          mediaButtons.prepend(downloadButton);
+        }
       }
     }
 
-    if (mediaAspecter.querySelector(".ckin__player")) {
-      const controls = mediaAspecter.querySelector(".default__controls.ckin__controls");
-      if (controls && !controls.querySelector(".tel-download")) {
-        const brControls = controls.querySelector(".bottom-controls .right-controls");
-        const downloadButton = document.createElement("button");
-        downloadButton.className = "btn-icon default__button tgico-download tel-download";
-        downloadButton.innerHTML = `<span class="tgico">${DOWNLOAD_ICON}</span>`;
-        downloadButton.setAttribute("type", "button");
-        downloadButton.setAttribute("title", "Download");
-        downloadButton.setAttribute("aria-label", "Download");
-        downloadButton.onclick = onDownload || (() => {
-          const v = mediaAspecter.querySelector("video");
-          if (v && v.src) tel_download_video(v.src);
-        });
-        if (brControls) brControls.prepend(downloadButton);
+    // In-Chat Message Videos in /k/
+    const chatVideos = document.querySelectorAll(".bubble .media-viewer-aspecter, .bubble .video-player");
+    chatVideos.forEach((bubbleMedia) => {
+      if (bubbleMedia.querySelector(".tel-download-chat-btn")) return;
+      const video = bubbleMedia.querySelector("video");
+      if (!video) return;
+
+      const btn = document.createElement("button");
+      btn.className = "tel-download-chat-btn";
+      btn.title = "Download Video";
+      btn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 14px;
+        opacity: 0.85;
+        transition: opacity 0.2s, transform 0.2s;
+      `;
+      btn.innerHTML = "📥";
+      btn.onmouseenter = () => (btn.style.opacity = "1", btn.style.transform = "scale(1.1)");
+      btn.onmouseleave = () => (btn.style.opacity = "0.85", btn.style.transform = "scale(1)");
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        triggerVideoDownloadFromContainer(bubbleMedia);
+      };
+      if (getComputedStyle(bubbleMedia).position === "static") {
+        bubbleMedia.style.position = "relative";
       }
-    } else if (
-      mediaAspecter.querySelector("video") &&
-      !mediaButtons.querySelector("button.btn-icon.tgico-download")
-    ) {
-      const downloadButton = document.createElement("button");
-      downloadButton.className = "btn-icon tgico-download tel-download";
-      downloadButton.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
-      downloadButton.setAttribute("type", "button");
-      downloadButton.setAttribute("title", "Download");
-      downloadButton.setAttribute("aria-label", "Download");
-      downloadButton.onclick = onDownload || (() => {
-        const v = mediaAspecter.querySelector("video");
-        if (v && v.src) tel_download_video(v.src);
-      });
-      mediaButtons.prepend(downloadButton);
-    } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
-      const img = mediaAspecter.querySelector("img.thumbnail");
-      if (img && img.src) {
-        const downloadButton = document.createElement("button");
-        downloadButton.className = "btn-icon tgico-download tel-download";
-        downloadButton.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
-        downloadButton.setAttribute("type", "button");
-        downloadButton.setAttribute("title", "Download");
-        downloadButton.setAttribute("aria-label", "Download");
-        downloadButton.onclick = onDownload || (() => tel_download_image(img.src));
-        mediaButtons.prepend(downloadButton);
+      bubbleMedia.appendChild(btn);
+    });
+  }, REFRESH_DELAY);
+
+  // 3. For Telegram Channel Post Preview (t.me/*)
+  setInterval(() => {
+    const postVideos = document.querySelectorAll(".tgme_widget_message_video_player, .tgme_widget_message_video");
+    postVideos.forEach((postMedia) => {
+      if (postMedia.querySelector(".tel-download-chat-btn")) return;
+      const video = postMedia.querySelector("video");
+      if (!video) return;
+
+      const btn = document.createElement("button");
+      btn.className = "tel-download-chat-btn";
+      btn.title = "Download Video";
+      btn.style.cssText = `
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 99;
+        background: rgba(0, 0, 0, 0.65);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 16px;
+        opacity: 0.9;
+        transition: opacity 0.2s, transform 0.2s;
+      `;
+      btn.innerHTML = "📥";
+      btn.onmouseenter = () => (btn.style.opacity = "1", btn.style.transform = "scale(1.1)");
+      btn.onmouseleave = () => (btn.style.opacity = "0.9", btn.style.transform = "scale(1)");
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        triggerVideoDownloadFromContainer(postMedia);
+      };
+      if (getComputedStyle(postMedia).position === "static") {
+        postMedia.style.position = "relative";
       }
-    }
+      postMedia.appendChild(btn);
+    });
   }, REFRESH_DELAY);
 
   logger.info("Completed script setup.");
