@@ -51,6 +51,15 @@
     }
     return h >>> 0;
   };
+  // Builds a readable "prefix_YYYY-MM-DD_HHMMSS" name instead of a random/hash string
+  const timestampedName = (prefix, extension) => {
+    const d = new Date();
+    const pad = (n) => n.toString().padStart(2, "0");
+    const stamp =
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `${prefix}_${stamp}.${extension}`;
+  };
 
   const createProgressBar = (videoId, fileName) => {
     const isDarkMode =
@@ -157,7 +166,7 @@
       (Math.random() + 1).toString(36).substring(2, 10) +
       "_" +
       Date.now().toString();
-    let fileName = hashCode(url).toString(36) + "." + _file_extension;
+    let fileName = timestampedName("telegram_video", _file_extension);
 
     // Some video src is in format:
     // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
@@ -324,7 +333,7 @@
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
-    const fileName = hashCode(url).toString(36) + ".ogg";
+    const fileName = timestampedName("telegram_audio", "ogg");
 
     const fetchNextPart = (_writable) => {
       fetch(url, {
@@ -466,8 +475,7 @@
   };
 
   const tel_download_image = (imageUrl) => {
-    const fileName =
-      (Math.random() + 1).toString(36).substring(2, 10) + ".jpeg"; // assume jpeg
+    const fileName = timestampedName("telegram_image", "jpeg"); // assume jpeg
 
     const a = document.createElement("a");
     document.body.appendChild(a);
