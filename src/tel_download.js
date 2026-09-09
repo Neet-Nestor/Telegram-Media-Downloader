@@ -40,6 +40,19 @@
   const FORWARD_ICON = "\ue99a";
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
+  // Auto-retry config for flaky connections: on a failed chunk fetch, wait
+  // and retry from the same byte offset (Range header) rather than aborting.
+  const MAX_AUTO_RETRIES = 5;
+  const RETRY_BASE_DELAY_MS = 1000; // doubles each attempt: 1s, 2s, 4s, 8s, 16s
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const showRetrying = (videoId, attempt, max) => {
+    const innerContainer = document.getElementById(
+      "tel-downloader-progress-" + videoId
+    );
+    if (!innerContainer) return;
+    innerContainer.querySelector("div.progress").querySelector("p").innerText =
+      `Retrying (${attempt}/${max})...`;
+  };
   const hashCode = (s) => {
     var h = 0,
       l = s.length,
@@ -50,6 +63,15 @@
       }
     }
     return h >>> 0;
+  };
+  // Builds a readable "prefix_YYYY-MM-DD_HHMMSS" name instead of a random/hash string
+  const timestampedName = (prefix, extension) => {
+    const d = new Date();
+    const pad = (n) => n.toString().padStart(2, "0");
+    const stamp =
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `${prefix}_${stamp}.${extension}`;
   };
 
   const createProgressBar = (videoId, fileName) => {
@@ -129,22 +151,70 @@
     progressBar.querySelector("div").style.width = progress + "%";
   };
 
-  const completeProgress = (videoId) => {
+  const completeProgress = (videoId, onSaveClick) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
       .querySelector("div.progress");
-    progressBar.querySelector("p").innerText = "Completed";
-    progressBar.querySelector("div").style.backgroundColor = "#B6C649";
-    progressBar.querySelector("div").style.width = "100%";
+    const label = progressBar.querySelector("p");
+    const fill = progressBar.querySelector("div");
+    fill.style.backgroundColor = "#B6C649";
+    fill.style.width = "100%";
+
+    if (!onSaveClick) {
+      label.innerText = "Completed";
+      return;
+    }
+
+    // Turn the label into a clickable "Save As..." button instead of
+    // auto-saving. This way each file is saved one at a time, on your own
+    // click, so the native save dialogs never collide with each other.
+    label.innerText = "Save As...";
+    label.style.cursor = "pointer";
+    label.style.textDecoration = "underline";
+    label.style.fontWeight = "bold";
+    label.onclick = async () => {
+      label.style.textDecoration = "none";
+      label.innerText = "Saving...";
+      const saved = await onSaveClick();
+      if (saved) {
+        label.innerText = "Saved";
+        label.style.cursor = "default";
+        label.onclick = null;
+      } else {
+        // Picker was dismissed/cancelled or failed - let them try again
+        label.innerText = "Save As...";
+        label.style.textDecoration = "underline";
+      }
+    };
   };
 
-  const AbortProgress = (videoId) => {
+  const AbortProgress = (videoId, onRetryClick) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
       .querySelector("div.progress");
-    progressBar.querySelector("p").innerText = "Aborted";
-    progressBar.querySelector("div").style.backgroundColor = "#D16666";
-    progressBar.querySelector("div").style.width = "100%";
+    const label = progressBar.querySelector("p");
+    const fill = progressBar.querySelector("div");
+    fill.style.backgroundColor = "#D16666";
+    fill.style.width = "100%";
+
+    if (!onRetryClick) {
+      label.innerText = "Aborted";
+      return;
+    }
+
+    // Auto-retries were exhausted - let the user manually resume whenever
+    // they're ready (e.g. once their connection is stable again).
+    label.innerText = "Retry?";
+    label.style.cursor = "pointer";
+    label.style.textDecoration = "underline";
+    label.style.fontWeight = "bold";
+    label.onclick = () => {
+      label.style.textDecoration = "none";
+      label.style.cursor = "default";
+      label.onclick = null;
+      fill.style.backgroundColor = "#6093B5";
+      onRetryClick();
+    };
   };
 
   const tel_download_video = (url) => {
@@ -152,12 +222,13 @@
     let _next_offset = 0;
     let _total_size = null;
     let _file_extension = "mp4";
+    let _retryCount = 0;
 
     const videoId =
       (Math.random() + 1).toString(36).substring(2, 10) +
       "_" +
       Date.now().toString();
-    let fileName = hashCode(url).toString(36) + "." + _file_extension;
+    let fileName = timestampedName("telegram_video", _file_extension);
 
     // Some video src is in format:
     // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
@@ -215,6 +286,7 @@
 
           _next_offset = endOffset + 1;
           _total_size = totalSize;
+          _retryCount = 0; // this chunk succeeded, so reset the failure streak
 
           logger.info(
             `Get response: ${res.headers.get(
@@ -252,27 +324,76 @@
               _writable.close().then(() => {
                 logger.info("Download finished", fileName);
               });
+              completeProgress(videoId, null);
             } else {
-              save();
+              completeProgress(videoId, () => saveOnClick());
             }
-            completeProgress(videoId);
           }
         })
         .catch((reason) => {
           logger.error(reason, fileName);
-          AbortProgress(videoId);
+          if (_retryCount < MAX_AUTO_RETRIES) {
+            _retryCount++;
+            const delay = RETRY_BASE_DELAY_MS * Math.pow(2, _retryCount - 1);
+            logger.info(
+              `Retrying (${_retryCount}/${MAX_AUTO_RETRIES}) in ${delay}ms...`,
+              fileName
+            );
+            showRetrying(videoId, _retryCount, MAX_AUTO_RETRIES);
+            // _next_offset wasn't advanced by the failed request, so this
+            // resumes from the last successfully downloaded byte.
+            sleep(delay).then(() => fetchNextPart(_writable));
+          } else {
+            AbortProgress(videoId, () => {
+              _retryCount = 0;
+              fetchNextPart(_writable);
+            });
+          }
         });
     };
 
-    const save = () => {
-      logger.info("Finish downloading blobs", fileName);
-      logger.info("Concatenating blobs and downloading...", fileName);
+    // Builds the final blob (once) and prompts the user to choose where to
+    // save it. Only runs when the user clicks the "Save As..." button, so
+    // concurrent downloads never fight over the same native dialog.
+    let _finalBlob = null;
+    const saveOnClick = async () => {
+      if (!_finalBlob) {
+        logger.info("Concatenating blobs...", fileName);
+        _finalBlob = new Blob(_blobs, { type: "video/mp4" });
+        logger.info("Final blob size: " + _finalBlob.size + " bytes", fileName);
+      }
 
-      const blob = new Blob(_blobs, { type: "video/mp4" });
-      const blobUrl = window.URL.createObjectURL(blob);
+      const supportsFileSystemAccess =
+        "showSaveFilePicker" in unsafeWindow &&
+        (() => {
+          try {
+            return unsafeWindow.self === unsafeWindow.top;
+          } catch {
+            return false;
+          }
+        })();
 
-      logger.info("Final blob size: " + blob.size + " bytes", fileName);
+      if (supportsFileSystemAccess) {
+        try {
+          const handle = await unsafeWindow.showSaveFilePicker({
+            suggestedName: fileName,
+          });
+          const writable = await handle.createWritable();
+          await writable.write(_finalBlob);
+          await writable.close();
+          logger.info("Saved via file picker", fileName);
+          return true;
+        } catch (err) {
+          if (err.name !== "AbortError") {
+            console.error(err.name, err.message);
+          }
+          return false;
+        }
+      }
 
+      // Fallback: browsers without showSaveFilePicker just get a normal
+      // download to the default Downloads folder.
+      const blobUrl = window.URL.createObjectURL(_finalBlob);
       const a = document.createElement("a");
       document.body.appendChild(a);
       a.href = blobUrl;
@@ -280,51 +401,23 @@
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
-
       logger.info("Download triggered", fileName);
+      return true;
     };
 
-    const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
-      (() => {
-        try {
-          return unsafeWindow.self === unsafeWindow.top;
-        } catch {
-          return false;
-        }
-      })();
-    if (supportsFileSystemAccess) {
-      unsafeWindow
-        .showSaveFilePicker({
-          suggestedName: fileName,
-        })
-        .then((handle) => {
-          handle
-            .createWritable()
-            .then((writable) => {
-              fetchNextPart(writable);
-              createProgressBar(videoId);
-            })
-            .catch((err) => {
-              console.error(err.name, err.message);
-            });
-        })
-        .catch((err) => {
-          if (err.name !== "AbortError") {
-            console.error(err.name, err.message);
-          }
-        });
-    } else {
-      fetchNextPart(null);
-      createProgressBar(videoId);
-    }
+    // Downloading always buffers into memory first; the native save picker
+    // (if supported) is only invoked later, when you click "Save As...",
+    // so it's tied to your click and multiple downloads can't collide.
+    fetchNextPart(null);
+    createProgressBar(videoId);
   };
 
   const tel_download_audio = (url) => {
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
-    const fileName = hashCode(url).toString(36) + ".ogg";
+    let _retryCount = 0;
+    const fileName = timestampedName("telegram_audio", "ogg");
 
     const fetchNextPart = (_writable) => {
       fetch(url, {
@@ -373,6 +466,7 @@
 
             _next_offset = endOffset + 1;
             _total_size = totalSize;
+            _retryCount = 0; // this chunk succeeded, so reset the failure streak
           } finally {
             logger.info(
               `Get response: ${res.headers.get(
@@ -404,6 +498,20 @@
         })
         .catch((reason) => {
           logger.error(reason, fileName);
+          if (_retryCount < MAX_AUTO_RETRIES) {
+            _retryCount++;
+            const delay = RETRY_BASE_DELAY_MS * Math.pow(2, _retryCount - 1);
+            logger.info(
+              `Retrying (${_retryCount}/${MAX_AUTO_RETRIES}) in ${delay}ms...`,
+              fileName
+            );
+            sleep(delay).then(() => fetchNextPart(_writable));
+          } else {
+            logger.error(
+              `Gave up after ${MAX_AUTO_RETRIES} retries`,
+              fileName
+            );
+          }
         });
     };
 
@@ -431,15 +539,8 @@
       logger.info("Download triggered", fileName);
     };
 
-    const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
-      (() => {
-        try {
-          return unsafeWindow.self === unsafeWindow.top;
-        } catch {
-          return false;
-        }
-      })();
+    // Native save-picker disabled: see explanation in tel_download_video above.
+    const supportsFileSystemAccess = false;
     if (supportsFileSystemAccess) {
       unsafeWindow
         .showSaveFilePicker({
@@ -466,8 +567,7 @@
   };
 
   const tel_download_image = (imageUrl) => {
-    const fileName =
-      (Math.random() + 1).toString(36).substring(2, 10) + ".jpeg"; // assume jpeg
+    const fileName = timestampedName("telegram_image", "jpeg"); // assume jpeg
 
     const a = document.createElement("a");
     document.body.appendChild(a);
