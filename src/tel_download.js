@@ -138,13 +138,41 @@
     progressBar.querySelector("div").style.width = progress + "%";
   };
 
-  const completeProgress = (videoId) => {
+  const completeProgress = (videoId, onSaveClick) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
       .querySelector("div.progress");
-    progressBar.querySelector("p").innerText = "Completed";
-    progressBar.querySelector("div").style.backgroundColor = "#B6C649";
-    progressBar.querySelector("div").style.width = "100%";
+    const label = progressBar.querySelector("p");
+    const fill = progressBar.querySelector("div");
+    fill.style.backgroundColor = "#B6C649";
+    fill.style.width = "100%";
+
+    if (!onSaveClick) {
+      label.innerText = "Completed";
+      return;
+    }
+
+    // Turn the label into a clickable "Save As..." button instead of
+    // auto-saving. This way each file is saved one at a time, on your own
+    // click, so the native save dialogs never collide with each other.
+    label.innerText = "Save As...";
+    label.style.cursor = "pointer";
+    label.style.textDecoration = "underline";
+    label.style.fontWeight = "bold";
+    label.onclick = async () => {
+      label.style.textDecoration = "none";
+      label.innerText = "Saving...";
+      const saved = await onSaveClick();
+      if (saved) {
+        label.innerText = "Saved";
+        label.style.cursor = "default";
+        label.onclick = null;
+      } else {
+        // Picker was dismissed/cancelled or failed - let them try again
+        label.innerText = "Save As...";
+        label.style.textDecoration = "underline";
+      }
+    };
   };
 
   const AbortProgress = (videoId) => {
@@ -261,10 +289,10 @@
               _writable.close().then(() => {
                 logger.info("Download finished", fileName);
               });
+              completeProgress(videoId, null);
             } else {
-              save();
+              completeProgress(videoId, () => saveOnClick());
             }
-            completeProgress(videoId);
           }
         })
         .catch((reason) => {
@@ -273,15 +301,48 @@
         });
     };
 
-    const save = () => {
-      logger.info("Finish downloading blobs", fileName);
-      logger.info("Concatenating blobs and downloading...", fileName);
+    // Builds the final blob (once) and prompts the user to choose where to
+    // save it. Only runs when the user clicks the "Save As..." button, so
+    // concurrent downloads never fight over the same native dialog.
+    let _finalBlob = null;
+    const saveOnClick = async () => {
+      if (!_finalBlob) {
+        logger.info("Concatenating blobs...", fileName);
+        _finalBlob = new Blob(_blobs, { type: "video/mp4" });
+        logger.info("Final blob size: " + _finalBlob.size + " bytes", fileName);
+      }
 
-      const blob = new Blob(_blobs, { type: "video/mp4" });
-      const blobUrl = window.URL.createObjectURL(blob);
+      const supportsFileSystemAccess =
+        "showSaveFilePicker" in unsafeWindow &&
+        (() => {
+          try {
+            return unsafeWindow.self === unsafeWindow.top;
+          } catch {
+            return false;
+          }
+        })();
 
-      logger.info("Final blob size: " + blob.size + " bytes", fileName);
+      if (supportsFileSystemAccess) {
+        try {
+          const handle = await unsafeWindow.showSaveFilePicker({
+            suggestedName: fileName,
+          });
+          const writable = await handle.createWritable();
+          await writable.write(_finalBlob);
+          await writable.close();
+          logger.info("Saved via file picker", fileName);
+          return true;
+        } catch (err) {
+          if (err.name !== "AbortError") {
+            console.error(err.name, err.message);
+          }
+          return false;
+        }
+      }
 
+      // Fallback: browsers without showSaveFilePicker just get a normal
+      // download to the default Downloads folder.
+      const blobUrl = window.URL.createObjectURL(_finalBlob);
       const a = document.createElement("a");
       document.body.appendChild(a);
       a.href = blobUrl;
@@ -289,44 +350,15 @@
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
-
       logger.info("Download triggered", fileName);
+      return true;
     };
 
-    const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
-      (() => {
-        try {
-          return unsafeWindow.self === unsafeWindow.top;
-        } catch {
-          return false;
-        }
-      })();
-    if (supportsFileSystemAccess) {
-      unsafeWindow
-        .showSaveFilePicker({
-          suggestedName: fileName,
-        })
-        .then((handle) => {
-          handle
-            .createWritable()
-            .then((writable) => {
-              fetchNextPart(writable);
-              createProgressBar(videoId);
-            })
-            .catch((err) => {
-              console.error(err.name, err.message);
-            });
-        })
-        .catch((err) => {
-          if (err.name !== "AbortError") {
-            console.error(err.name, err.message);
-          }
-        });
-    } else {
-      fetchNextPart(null);
-      createProgressBar(videoId);
-    }
+    // Downloading always buffers into memory first; the native save picker
+    // (if supported) is only invoked later, when you click "Save As...",
+    // so it's tied to your click and multiple downloads can't collide.
+    fetchNextPart(null);
+    createProgressBar(videoId);
   };
 
   const tel_download_audio = (url) => {
@@ -440,15 +472,8 @@
       logger.info("Download triggered", fileName);
     };
 
-    const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
-      (() => {
-        try {
-          return unsafeWindow.self === unsafeWindow.top;
-        } catch {
-          return false;
-        }
-      })();
+    // Native save-picker disabled: see explanation in tel_download_video above.
+    const supportsFileSystemAccess = false;
     if (supportsFileSystemAccess) {
       unsafeWindow
         .showSaveFilePicker({
