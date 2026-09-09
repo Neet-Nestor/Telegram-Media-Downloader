@@ -40,6 +40,19 @@
   const FORWARD_ICON = "\ue99a";
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
+  // Auto-retry config for flaky connections: on a failed chunk fetch, wait
+  // and retry from the same byte offset (Range header) rather than aborting.
+  const MAX_AUTO_RETRIES = 5;
+  const RETRY_BASE_DELAY_MS = 1000; // doubles each attempt: 1s, 2s, 4s, 8s, 16s
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const showRetrying = (videoId, attempt, max) => {
+    const innerContainer = document.getElementById(
+      "tel-downloader-progress-" + videoId
+    );
+    if (!innerContainer) return;
+    innerContainer.querySelector("div.progress").querySelector("p").innerText =
+      `Retrying (${attempt}/${max})...`;
+  };
   const hashCode = (s) => {
     var h = 0,
       l = s.length,
@@ -175,13 +188,33 @@
     };
   };
 
-  const AbortProgress = (videoId) => {
+  const AbortProgress = (videoId, onRetryClick) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
       .querySelector("div.progress");
-    progressBar.querySelector("p").innerText = "Aborted";
-    progressBar.querySelector("div").style.backgroundColor = "#D16666";
-    progressBar.querySelector("div").style.width = "100%";
+    const label = progressBar.querySelector("p");
+    const fill = progressBar.querySelector("div");
+    fill.style.backgroundColor = "#D16666";
+    fill.style.width = "100%";
+
+    if (!onRetryClick) {
+      label.innerText = "Aborted";
+      return;
+    }
+
+    // Auto-retries were exhausted - let the user manually resume whenever
+    // they're ready (e.g. once their connection is stable again).
+    label.innerText = "Retry?";
+    label.style.cursor = "pointer";
+    label.style.textDecoration = "underline";
+    label.style.fontWeight = "bold";
+    label.onclick = () => {
+      label.style.textDecoration = "none";
+      label.style.cursor = "default";
+      label.onclick = null;
+      fill.style.backgroundColor = "#6093B5";
+      onRetryClick();
+    };
   };
 
   const tel_download_video = (url) => {
@@ -189,6 +222,7 @@
     let _next_offset = 0;
     let _total_size = null;
     let _file_extension = "mp4";
+    let _retryCount = 0;
 
     const videoId =
       (Math.random() + 1).toString(36).substring(2, 10) +
@@ -252,6 +286,7 @@
 
           _next_offset = endOffset + 1;
           _total_size = totalSize;
+          _retryCount = 0; // this chunk succeeded, so reset the failure streak
 
           logger.info(
             `Get response: ${res.headers.get(
@@ -297,7 +332,23 @@
         })
         .catch((reason) => {
           logger.error(reason, fileName);
-          AbortProgress(videoId);
+          if (_retryCount < MAX_AUTO_RETRIES) {
+            _retryCount++;
+            const delay = RETRY_BASE_DELAY_MS * Math.pow(2, _retryCount - 1);
+            logger.info(
+              `Retrying (${_retryCount}/${MAX_AUTO_RETRIES}) in ${delay}ms...`,
+              fileName
+            );
+            showRetrying(videoId, _retryCount, MAX_AUTO_RETRIES);
+            // _next_offset wasn't advanced by the failed request, so this
+            // resumes from the last successfully downloaded byte.
+            sleep(delay).then(() => fetchNextPart(_writable));
+          } else {
+            AbortProgress(videoId, () => {
+              _retryCount = 0;
+              fetchNextPart(_writable);
+            });
+          }
         });
     };
 
@@ -365,6 +416,7 @@
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
+    let _retryCount = 0;
     const fileName = timestampedName("telegram_audio", "ogg");
 
     const fetchNextPart = (_writable) => {
@@ -414,6 +466,7 @@
 
             _next_offset = endOffset + 1;
             _total_size = totalSize;
+            _retryCount = 0; // this chunk succeeded, so reset the failure streak
           } finally {
             logger.info(
               `Get response: ${res.headers.get(
@@ -445,6 +498,20 @@
         })
         .catch((reason) => {
           logger.error(reason, fileName);
+          if (_retryCount < MAX_AUTO_RETRIES) {
+            _retryCount++;
+            const delay = RETRY_BASE_DELAY_MS * Math.pow(2, _retryCount - 1);
+            logger.info(
+              `Retrying (${_retryCount}/${MAX_AUTO_RETRIES}) in ${delay}ms...`,
+              fileName
+            );
+            sleep(delay).then(() => fetchNextPart(_writable));
+          } else {
+            logger.error(
+              `Gave up after ${MAX_AUTO_RETRIES} retries`,
+              fileName
+            );
+          }
         });
     };
 
