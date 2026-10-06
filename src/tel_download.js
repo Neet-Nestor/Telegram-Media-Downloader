@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器
 // @name:zh-TW   Telegram 受限圖片影片下載器
 // @name:ru      Telegram: загрузчик медиафайлов
-// @version      1.212
+// @version      1.214
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
@@ -17,11 +17,63 @@
 // @match        https://web.telegram.org/*
 // @match        https://webk.telegram.org/*
 // @match        https://webz.telegram.org/*
+// @grant        none
+// @inject-into  page
 // @icon         https://img.icons8.com/color/452/telegram-app--v5.png
 // ==/UserScript==
 
 
-(function () {
+(function telegramMediaDownloader(inPageContext = false) {
+  // A DOM script executes in the page even when the manager ignores @inject-into.
+  if (!inPageContext) {
+    const script = document.createElement("script");
+    const nonce = document.querySelector("script[nonce]")?.nonce;
+    if (nonce) script.nonce = nonce;
+    script.textContent = `(${telegramMediaDownloader.toString()})(true);`;
+    try {
+      (document.head || document.documentElement).appendChild(script);
+      if (script.dataset.executed !== "true") {
+        throw new Error("Browser blocked page-context script injection.");
+      }
+    } catch (err) {
+      console.error(
+        "[Tel Download] Could not start in Telegram's page context. " +
+          "Try a userscript manager that supports page injection, or disable " +
+          "this userscript and run its contents in Telegram's DevTools console " +
+          "with the final })(); changed to })(true);.",
+        err
+      );
+    } finally {
+      script.remove();
+    }
+    return;
+  }
+  if (document.currentScript) {
+    document.currentScript.dataset.executed = "true";
+  }
+  if (document.getElementById("tel-downloader-progress-bar-container")) return;
+
+  const pageWindow = window;
+  const pageFetch = pageWindow.fetch.bind(pageWindow);
+  // Telegram's stream URLs must pass through the page's service worker.
+  const fetchMedia = async (url, offset) => {
+    const response = await pageFetch(url, {
+      method: "GET",
+      credentials: "same-origin",
+      redirect: "follow",
+      headers: { Range: `bytes=${offset}-` },
+    });
+    if (response.status !== 200 && response.status !== 206) {
+      throw new Error(
+        `Media request failed: HTTP ${response.status}; ` +
+          `URL: ${response.url || url}; ` +
+          `Location: ${response.headers.get("Location") || "unavailable"}; ` +
+          `service worker: ${!!pageWindow.navigator.serviceWorker?.controller}`
+      );
+    }
+    return response;
+  };
+
   const logger = {
     info: (message, fileName = null) => {
       console.log(
@@ -123,6 +175,7 @@
     const innerContainer = document.getElementById(
       "tel-downloader-progress-" + videoId
     );
+    if (!innerContainer) return;
     innerContainer.querySelector("p.filename").innerText = fileName;
     const progressBar = innerContainer.querySelector("div.progress");
     progressBar.querySelector("p").innerText = progress + "%";
@@ -132,17 +185,20 @@
   const completeProgress = (videoId) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
-      .querySelector("div.progress");
+      ?.querySelector("div.progress");
+    if (!progressBar) return;
     progressBar.querySelector("p").innerText = "Completed";
     progressBar.querySelector("div").style.backgroundColor = "#B6C649";
     progressBar.querySelector("div").style.width = "100%";
   };
 
-  const AbortProgress = (videoId) => {
+  const AbortProgress = (videoId, reason) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
-      .querySelector("div.progress");
+      ?.querySelector("div.progress");
+    if (!progressBar) return;
     progressBar.querySelector("p").innerText = "Aborted";
+    progressBar.title = String(reason);
     progressBar.querySelector("div").style.backgroundColor = "#D16666";
     progressBar.querySelector("div").style.width = "100%";
   };
@@ -174,19 +230,12 @@
     logger.info(`URL: ${url}`, fileName);
 
     const fetchNextPart = (_writable) => {
-      fetch(url, {
-        method: "GET",
-        headers: {
-          Range: `bytes=${_next_offset}-`,
-        },
-        "User-Agent":
-          "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
-      })
-        .then((res) => {
+      fetchMedia(url, _next_offset)
+        .then(async (res) => {
           if (![200, 206].includes(res.status)) {
             throw new Error("Non 200/206 response was received: " + res.status);
           }
-          const mime = res.headers.get("Content-Type").split(";")[0];
+          const mime = (res.headers.get("Content-Type") || "").split(";")[0];
           if (!mime.startsWith("video/")) {
             throw new Error("Get non video response with MIME type " + mime);
           }
@@ -194,9 +243,22 @@
           fileName =
             fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
 
-          const match = res.headers
-            .get("Content-Range")
-            .match(contentRangeRegex);
+          if (res.status === 200) {
+            if (_next_offset !== 0) {
+              throw new Error("Server ignored the requested byte range.");
+            }
+            const blob = await res.blob();
+            _next_offset = _total_size = blob.size;
+            updateProgress(videoId, fileName, 100);
+            return blob;
+          }
+
+          const match = (res.headers.get("Content-Range") || "").match(
+            contentRangeRegex
+          );
+          if (!match) {
+            throw new Error("Missing or invalid Content-Range header.");
+          }
 
           const startOffset = parseInt(match[1]);
           const endOffset = parseInt(match[2]);
@@ -235,7 +297,7 @@
         })
         .then((resBlob) => {
           if (_writable !== null) {
-            _writable.write(resBlob).then(() => {});
+            return _writable.write(resBlob);
           } else {
             _blobs.push(resBlob);
           }
@@ -249,8 +311,9 @@
             fetchNextPart(_writable);
           } else {
             if (_writable !== null) {
-              _writable.close().then(() => {
+              return _writable.close().then(() => {
                 logger.info("Download finished", fileName);
+                completeProgress(videoId);
               });
             } else {
               save();
@@ -260,7 +323,10 @@
         })
         .catch((reason) => {
           logger.error(reason, fileName);
-          AbortProgress(videoId);
+          AbortProgress(videoId, reason);
+          if (_writable !== null) {
+            return _writable.abort().catch((err) => logger.error(err, fileName));
+          }
         });
     };
 
@@ -285,16 +351,16 @@
     };
 
     const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
+      "showSaveFilePicker" in pageWindow &&
       (() => {
         try {
-          return unsafeWindow.self === unsafeWindow.top;
+          return pageWindow.self === pageWindow.top;
         } catch {
           return false;
         }
       })();
     if (supportsFileSystemAccess) {
-      unsafeWindow
+      pageWindow
         .showSaveFilePicker({
           suggestedName: fileName,
         })
@@ -302,8 +368,8 @@
           handle
             .createWritable()
             .then((writable) => {
+              createProgressBar(videoId, fileName);
               fetchNextPart(writable);
-              createProgressBar(videoId);
             })
             .catch((err) => {
               console.error(err.name, err.message);
@@ -315,8 +381,8 @@
           }
         });
     } else {
+      createProgressBar(videoId, fileName);
       fetchNextPart(null);
-      createProgressBar(videoId);
     }
   };
 
@@ -327,22 +393,13 @@
     const fileName = hashCode(url).toString(36) + ".ogg";
 
     const fetchNextPart = (_writable) => {
-      fetch(url, {
-        method: "GET",
-        headers: {
-          Range: `bytes=${_next_offset}-`,
-        },
-      })
-        .then((res) => {
+      fetchMedia(url, _next_offset)
+        .then(async (res) => {
           if (res.status !== 206 && res.status !== 200) {
-            logger.error(
-              "Non 200/206 response was received: " + res.status,
-              fileName
-            );
-            return;
+            throw new Error("Non 200/206 response was received: " + res.status);
           }
 
-          const mime = res.headers.get("Content-Type").split(";")[0];
+          const mime = (res.headers.get("Content-Type") || "").split(";")[0];
           if (!mime.startsWith("audio/")) {
             logger.error(
               "Get non audio response with MIME type " + mime,
@@ -351,40 +408,49 @@
             throw "Get non audio response with MIME type " + mime;
           }
 
-          try {
-            const match = res.headers
-              .get("Content-Range")
-              .match(contentRangeRegex);
-
-            const startOffset = parseInt(match[1]);
-            const endOffset = parseInt(match[2]);
-            const totalSize = parseInt(match[3]);
-
-            if (startOffset !== _next_offset) {
-              logger.error("Gap detected between responses.");
-              logger.info("Last offset: " + _next_offset);
-              logger.info("New start offset " + match[1]);
-              throw "Gap detected between responses.";
+          if (res.status === 200) {
+            if (_next_offset !== 0) {
+              throw new Error("Server ignored the requested byte range.");
             }
-            if (_total_size && totalSize !== _total_size) {
-              logger.error("Total size differs");
-              throw "Total size differs";
-            }
-
-            _next_offset = endOffset + 1;
-            _total_size = totalSize;
-          } finally {
-            logger.info(
-              `Get response: ${res.headers.get(
-                "Content-Length"
-              )} bytes data from ${res.headers.get("Content-Range")}`
-            );
-            return res.blob();
+            const blob = await res.blob();
+            _next_offset = _total_size = blob.size;
+            return blob;
           }
+
+          const match = res.headers
+            .get("Content-Range")
+            ?.match(contentRangeRegex);
+          if (!match) {
+            throw new Error("Missing or invalid Content-Range header.");
+          }
+
+          const startOffset = parseInt(match[1]);
+          const endOffset = parseInt(match[2]);
+          const totalSize = parseInt(match[3]);
+
+          if (startOffset !== _next_offset) {
+            logger.error("Gap detected between responses.");
+            logger.info("Last offset: " + _next_offset);
+            logger.info("New start offset " + match[1]);
+            throw "Gap detected between responses.";
+          }
+          if (_total_size && totalSize !== _total_size) {
+            logger.error("Total size differs");
+            throw "Total size differs";
+          }
+
+          _next_offset = endOffset + 1;
+          _total_size = totalSize;
+          logger.info(
+            `Get response: ${res.headers.get(
+              "Content-Length"
+            )} bytes data from ${res.headers.get("Content-Range")}`
+          );
+          return res.blob();
         })
         .then((resBlob) => {
           if (_writable !== null) {
-            _writable.write(resBlob).then(() => {});
+            return _writable.write(resBlob);
           } else {
             _blobs.push(resBlob);
           }
@@ -394,7 +460,7 @@
             fetchNextPart(_writable);
           } else {
             if (_writable !== null) {
-              _writable.close().then(() => {
+              return _writable.close().then(() => {
                 logger.info("Download finished", fileName);
               });
             } else {
@@ -404,6 +470,9 @@
         })
         .catch((reason) => {
           logger.error(reason, fileName);
+          if (_writable !== null) {
+            return _writable.abort().catch((err) => logger.error(err, fileName));
+          }
         });
     };
 
@@ -432,16 +501,16 @@
     };
 
     const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
+      "showSaveFilePicker" in pageWindow &&
       (() => {
         try {
-          return unsafeWindow.self === unsafeWindow.top;
+          return pageWindow.self === pageWindow.top;
         } catch {
           return false;
         }
       })();
     if (supportsFileSystemAccess) {
-      unsafeWindow
+      pageWindow
         .showSaveFilePicker({
           suggestedName: fileName,
         })
@@ -479,7 +548,7 @@
     logger.info("Download triggered", fileName);
   };
 
-  logger.info("Initialized");
+  logger.info("Initialized v1.214 in page context");
 
   // For webz /a/ webapp
   setInterval(() => {
