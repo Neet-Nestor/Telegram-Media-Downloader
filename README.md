@@ -87,6 +87,14 @@ On WebK, the script can also use Telegram's own download engine when the current
 
 If these internal WebK interfaces are unavailable, the script keeps using its URL-based downloader. Once a native transfer starts, errors are shown for manual retry instead of silently starting a second download. WebA and stories retain their existing download paths. Telegram's private interfaces may change, so live WebK testing remains important.
 
+### Selected messages and context-menu downloads (WebK)
+
+Select messages using Telegram's normal selection controls, then click the added download icon beside the selection bar (**Download selected media**). Photos, videos, GIF videos and audio are added to the existing task queue. Text, unsupported attachments, repeated media and files already in the queue are skipped, with counts shown in the task panel. This downloads the current selection; it does not scan or export an entire chat.
+
+In restricted chats, right-click a media message or an individual album item and choose the added **Download** menu item. Regular chats keep Telegram's existing context menu. These entry points appear when WebK exposes the required media and selection interfaces; WebA continues to support downloading from its media viewer.
+
+The panel's **Cancel all downloads** button stops queued tasks, cancellable active transfers and any pending selection lookup. Downloads already handed to the browser, or native transfers without cancellation support, remain under Telegram/browser control. Individual tasks also retain their Cancel and Retry buttons. Switching chats does not retarget queued media or clear the new chat's selection, and one failed item does not stop the rest of the queue.
+
 ### Interface Language
 
 The download UI supports English, Simplified Chinese, Traditional Chinese, Russian, and Burmese. It uses the first supported language in your browser's language preferences, falling back to English. Chinese script and regional variants are recognized, including Traditional Chinese for Taiwan, Hong Kong, and Macau.

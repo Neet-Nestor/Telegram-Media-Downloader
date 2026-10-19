@@ -47,6 +47,10 @@
       errorUnexpected: "Download failed: {message}",
       errorNativeUnavailable: "Telegram's download interface is unavailable. Reopen the media and try again.",
       nativeCancelUnavailable: "This Telegram download cannot be cancelled from this panel",
+      downloadSelected: "Download selected media", cancelAll: "Cancel all downloads",
+      readingSelection: "Reading selected messages…", batchCancelled: "Selection download cancelled",
+      batchQueued: "Added {count} downloads. Skipped {skipped} text, unsupported or duplicate items.",
+      dismissNotice: "Dismiss notice", errorSelectionChanged: "The selection changed. Select the messages again.",
     },
     "zh-CN": {
       downloads: "下载", downloadsCount: "下载（{count}）", mediaDownloads: "媒体下载",
@@ -68,6 +72,10 @@
       errorUnexpected: "下载失败：{message}",
       errorNativeUnavailable: "Telegram 下载接口不可用，请重新打开媒体后重试。",
       nativeCancelUnavailable: "此 Telegram 下载无法从本面板取消",
+      downloadSelected: "下载选中媒体", cancelAll: "取消全部下载",
+      readingSelection: "正在读取选中消息…", batchCancelled: "已取消选中消息的下载",
+      batchQueued: "已添加 {count} 个下载，跳过 {skipped} 条文字、不支持或重复的内容。",
+      dismissNotice: "关闭提示", errorSelectionChanged: "选择已改变，请重新选择消息。",
     },
     "zh-TW": {
       downloads: "下載", downloadsCount: "下載（{count}）", mediaDownloads: "媒體下載",
@@ -89,6 +97,10 @@
       errorUnexpected: "下載失敗：{message}",
       errorNativeUnavailable: "Telegram 下載介面無法使用，請重新開啟媒體後重試。",
       nativeCancelUnavailable: "此 Telegram 下載無法從本面板取消",
+      downloadSelected: "下載選取媒體", cancelAll: "取消全部下載",
+      readingSelection: "正在讀取選取訊息…", batchCancelled: "已取消選取訊息的下載",
+      batchQueued: "已新增 {count} 個下載，略過 {skipped} 則文字、不支援或重複的內容。",
+      dismissNotice: "關閉提示", errorSelectionChanged: "選取內容已變更，請重新選取訊息。",
     },
     ru: {
       downloads: "Загрузки", downloadsCount: "Загрузки ({count})", mediaDownloads: "Загрузка медиа",
@@ -110,6 +122,10 @@
       errorUnexpected: "Не удалось скачать: {message}",
       errorNativeUnavailable: "Интерфейс загрузки Telegram недоступен. Откройте медиа заново и повторите попытку.",
       nativeCancelUnavailable: "Эту загрузку Telegram нельзя отменить из этой панели",
+      downloadSelected: "Скачать выбранные медиа", cancelAll: "Отменить все загрузки",
+      readingSelection: "Чтение выбранных сообщений…", batchCancelled: "Загрузка выбранных сообщений отменена",
+      batchQueued: "Добавлено загрузок: {count}. Пропущено текстовых, неподдерживаемых или повторных элементов: {skipped}.",
+      dismissNotice: "Закрыть уведомление", errorSelectionChanged: "Выбор изменился. Выберите сообщения заново.",
     },
     my: {
       downloads: "ဒေါင်းလုဒ်များ", downloadsCount: "ဒေါင်းလုဒ်များ ({count})", mediaDownloads: "မီဒီယာဒေါင်းလုဒ်များ",
@@ -131,6 +147,10 @@
       errorUnexpected: "ဒေါင်းလုဒ် မအောင်မြင်ပါ: {message}",
       errorNativeUnavailable: "Telegram ဒေါင်းလုဒ်စနစ် မရရှိနိုင်ပါ။ မီဒီယာကို ပြန်ဖွင့်ပြီး ထပ်စမ်းပါ။",
       nativeCancelUnavailable: "ဤ Telegram ဒေါင်းလုဒ်ကို ဤနေရာမှ ပယ်ဖျက်၍ မရပါ",
+      downloadSelected: "ရွေးထားသော မီဒီယာကို ဒေါင်းလုဒ်လုပ်ရန်", cancelAll: "ဒေါင်းလုဒ်အားလုံး ပယ်ဖျက်ရန်",
+      readingSelection: "ရွေးထားသော မက်ဆေ့ချ်များကို ဖတ်နေသည်…", batchCancelled: "ရွေးထားသော မက်ဆေ့ချ်များ၏ ဒေါင်းလုဒ်ကို ပယ်ဖျက်ပြီး",
+      batchQueued: "ဒေါင်းလုဒ် {count} ခု ထည့်ပြီး။ စာသား၊ မပံ့ပိုးသော သို့မဟုတ် ထပ်နေသော အရာ {skipped} ခု ကျော်သွားသည်။",
+      dismissNotice: "အသိပေးချက်ကို ပိတ်ရန်", errorSelectionChanged: "ရွေးချယ်မှု ပြောင်းသွားသည်။ မက်ဆေ့ချ်များကို ပြန်ရွေးပါ။",
     },
   };
   const LANGUAGE_STORAGE_KEY = "tel-media-downloader-language";
@@ -463,6 +483,8 @@
   const MAX_CONCURRENT_DOWNLOADS = 2;
   let runningDownloads = 0;
   let runningNativeDownloads = 0;
+  let selectionRequest = null;
+  let batchNotice = null;
 
   const formatBytes = (bytes) => {
     const units = ["B", "KB", "MB", "GB", "TB"];
@@ -472,10 +494,28 @@
   const updateTaskPanel = () => {
     const panel = document.getElementById("tel-downloader-progress-bar-container");
     if (!panel) return;
-    panel.hidden = !panel.querySelector(".tel-task");
+    panel.hidden = !panel.querySelector(".tel-task") && !batchNotice;
     if (panel.hidden) setSettingsOpen(false);
     panel.querySelector(".tel-panel-title").textContent = activeDownloads.size
       ? t("downloadsCount", { count: integerFormat.format(activeDownloads.size) }) : t("downloads");
+    const cancelAll = panel.querySelector(".tel-cancel-all");
+    cancelAll.hidden = !activeDownloads.size && !selectionRequest;
+    cancelAll.disabled = !selectionRequest && !Array.from(activeDownloads.values()).some(canCancelTask);
+    cancelAll.title = t("cancelAll");
+    cancelAll.setAttribute("aria-label", t("cancelAll"));
+    const notice = panel.querySelector(".tel-batch-notice");
+    notice.hidden = !batchNotice;
+    const params = { ...batchNotice?.params };
+    for (const key of Object.keys(params)) params[key] = integerFormat.format(params[key]);
+    const text = batchNotice?.error ? formatDownloadError(batchNotice.error) : batchNotice ? t(batchNotice.key, params) : "";
+    if (notice.querySelector("p").textContent !== text) notice.querySelector("p").textContent = text;
+    notice.querySelector("button").setAttribute("aria-label", t("dismissNotice"));
+  };
+  const canCancelTask = (task) => !task.finished && task.state !== "saving" && !task.nativeCancelUnavailable;
+  const cancelTask = (task) => {
+    if (!canCancelTask(task)) return;
+    task.controller.abort(new DOMException("Download cancelled", "AbortError"));
+    if (!task.running) finishTask(task, "cancelled");
   };
   const dismissTask = (task) => {
     document.getElementById("tel-downloader-progress-" + task.id)?.remove();
@@ -502,11 +542,7 @@
         <p class="tel-task-details"></p><p class="tel-task-error"></p>
         <div class="tel-task-actions"><button type="button" data-action="cancel"></button><button type="button" data-action="retry" hidden></button></div>`;
       card.querySelector('[data-action="dismiss"]').onclick = () => dismissTask(task);
-      card.querySelector('[data-action="cancel"]').onclick = () => {
-        if (task.finished || task.state === "saving" || task.nativeCancelUnavailable) return;
-        task.controller.abort(new DOMException("Download cancelled", "AbortError"));
-        if (!task.running) finishTask(task, "cancelled");
-      };
+      card.querySelector('[data-action="cancel"]').onclick = () => cancelTask(task);
       card.querySelector('[data-action="retry"]').onclick = () => {
         dismissTask(task);
         downloadMedia(task.url, task.kind, task.native);
@@ -779,6 +815,120 @@
     else if (imageUrl) tel_download_image(imageUrl);
   };
 
+  const setBatchNotice = (notice) => {
+    batchNotice = notice;
+    updateTaskPanel();
+  };
+  const downloadSelectedMessages = async (selection) => {
+    if (selectionRequest) return;
+    if (getWebKPage()?.appImManager?.chat?.selection !== selection) {
+      setBatchNotice({ error: downloadError("errorSelectionChanged") });
+      return;
+    }
+    const request = selectionRequest = {};
+    setBatchNotice({ key: "readingSelection" });
+    refreshWebKMessageActions();
+    try {
+      // Invoke before yielding: WebK snapshots its selected IDs synchronously.
+      // Keep these media objects even if the user switches chats while waiting.
+      const messages = await selection.getSelectedMessages();
+      if (selectionRequest !== request) return;
+      if (!Array.isArray(messages)) throw downloadError("errorSelectionChanged");
+      if (typeof getWebKPage()?.appDownloadManager?.downloadToDisc !== "function") {
+        throw downloadError("errorNativeUnavailable");
+      }
+      const unique = new Map();
+      for (const message of messages) {
+        const native = getWebKDownload(getWebKMessageMedia(message));
+        if (native && !activeDownloads.has(native.key)) unique.set(native.key, native);
+      }
+      for (const native of unique.values()) downloadMedia(undefined, native.kind, native);
+      setBatchNotice({ key: "batchQueued", params: {
+        count: unique.size, skipped: messages.length - unique.size,
+      } });
+    } catch (error) {
+      if (selectionRequest === request) setBatchNotice({ error });
+    } finally {
+      if (selectionRequest === request) selectionRequest = null;
+      updateTaskPanel();
+      refreshWebKMessageActions();
+    }
+  };
+  let contextDownload = null;
+  const captureWebKContext = (event) => {
+    if (event.type === "mouseup" && event.button !== 2) return;
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    if (target?.closest("#bubble-contextmenu")) return;
+    contextDownload = null;
+    const bubble = target?.closest(".bubble");
+    const item = target?.closest("[data-mid]");
+    if (bubble && item) {
+      const peerId = item.dataset.peerId || bubble.dataset.peerId;
+      const mid = item.dataset.mid;
+      const embedded = item.message || bubble.message;
+      const matches = embedded && String(embedded.peerId) === String(peerId) && Number(embedded.mid ?? embedded.id) === Number(mid);
+      const message = matches ? embedded : getWebKMessage(peerId, mid);
+      if (bubble.closest(".no-forwards") || message?.pFlags?.noforwards) {
+        contextDownload = getWebKDownload(getWebKMessageMedia(message));
+      }
+    }
+    refreshWebKMessageActions();
+  };
+  const refreshWebKMessageActions = () => {
+    const page = getWebKPage();
+    const available = typeof page?.appDownloadManager?.downloadToDisc === "function";
+    const menu = document.getElementById("bubble-contextmenu");
+    if (menu) {
+      let button = menu.querySelector(".tel-context-download");
+      if (!available || !contextDownload) button?.remove();
+      else {
+        const first = menu.querySelector(".btn-menu-item:not(.tel-context-download)");
+        if (!button && first) {
+          button = document.createElement("button");
+          button.type = "button";
+          button.className = "btn-menu-item rp-overflow tel-context-download";
+          button.setAttribute("role", "menuitem");
+          button.innerHTML = `<span class="btn-menu-item-icon">${createWebKDownloadIcon()}</span><span class="btn-menu-item-text"></span>`;
+          first.before(button);
+        }
+        if (button) {
+          const native = contextDownload;
+          button.querySelector(".btn-menu-item-text").textContent = t("download");
+          button.setAttribute("aria-label", t("download"));
+          button.lang = uiLanguage;
+          button.onclick = () => downloadMedia(undefined, native.kind, native);
+        }
+      }
+    }
+    const chat = page?.appImManager?.chat;
+    const selection = chat?.selection;
+    const wrappers = Array.from(document.querySelectorAll(".selection-wrapper"));
+    const current = selection?.selectionInputWrapper || selection?.selectionContainer?.closest(".selection-wrapper") ||
+      chat?.container?.querySelector(".selection-wrapper") || (wrappers.length === 1 ? wrappers[0] : null);
+    for (const wrapper of wrappers) {
+      let button = wrapper.querySelector(".tel-selection-download");
+      const bar = wrapper.querySelector(".selection-container");
+      if (!available || typeof selection?.getSelectedMessages !== "function" || selection.isReportSelection || wrapper !== current || !bar) {
+        button?.remove();
+        continue;
+      }
+      if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn-icon tel-selection-download";
+        button.innerHTML = createWebKDownloadIcon(true);
+        // Keep Telegram's selection plate layout intact; put the extra action
+        // next to the plate, including in versions with three fixed slots.
+        wrapper.appendChild(button);
+      }
+      button.disabled = !!selectionRequest;
+      button.title = t("downloadSelected");
+      button.setAttribute("aria-label", t("downloadSelected"));
+      button.lang = uiLanguage;
+      button.onclick = () => downloadSelectedMessages(selection);
+    }
+  };
+
   logger.info("Initialized");
 
   const createDownloadButton = (className, iconHTML, onClick) => {
@@ -851,6 +1001,7 @@
   // WebK owns only media discovery and button placement.
   const refreshWebK = () => {
     refreshWebKDownloadIcon();
+    refreshWebKMessageActions();
 
     // Resolve the pinned media again on every click: its source may load after
     // the pinned message changes, and message IDs can repeat across chats.
@@ -1008,6 +1159,9 @@
     <div class="tel-panel-heading">
       <strong class="tel-panel-title"></strong>
       <div class="tel-panel-tools">
+        <button class="tel-cancel-all" type="button" hidden>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+        </button>
         <button class="tel-settings-toggle" type="button" aria-expanded="false" aria-controls="tel-download-settings">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 2h4l.6 3 2 1.2 2.9-.9 2 3.4-2.3 2v2.6l2.3 2-2 3.4-2.9-.9-2 1.2L14 22h-4l-.6-3-2-1.2-2.9.9-2-3.4 2.3-2v-2.6l-2.3-2 2-3.4 2.9.9 2-1.2Z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
@@ -1015,6 +1169,7 @@
       </div>
     </div>
     <div id="tel-download-settings" class="tel-language-setting" hidden><label for="tel-download-language"></label><select id="tel-download-language"></select></div>
+    <div class="tel-batch-notice" hidden><p role="status" aria-live="polite"></p><button type="button">&times;</button></div>
     <div id="tel-task-list" class="tel-task-list"></div>`;
   const languageSelect = panel.querySelector("select");
   const settings = panel.querySelector("#tel-download-settings");
@@ -1027,6 +1182,16 @@
     else if (returnFocus && !panel.hidden) settingsToggle.focus();
   };
   settingsToggle.onclick = () => setSettingsOpen(settings.hidden);
+  panel.querySelector(".tel-batch-notice button").onclick = () => setBatchNotice(null);
+  panel.querySelector(".tel-cancel-all").onclick = () => {
+    if (selectionRequest) {
+      selectionRequest = null;
+      setBatchNotice({ key: "batchCancelled" });
+    }
+    Array.from(activeDownloads.values()).forEach(cancelTask);
+    updateTaskPanel();
+    refreshWebKMessageActions();
+  };
   panel.addEventListener("keydown", event => {
     if (event.key === "Escape" && !settings.hidden) {
       event.preventDefault();
@@ -1065,6 +1230,7 @@
     document.querySelectorAll("button.tel-download, button._tel_download_button_pinned_container").forEach(button => {
       localizeDownloadButton(button, button.matches("._tel_download_button_pinned_container:disabled"));
     });
+    if (getWebKPage()) refreshWebKMessageActions();
   };
   languageSelect.onchange = () => {
     languagePreference = Object.hasOwn(UI_LANGUAGES, languageSelect.value) ? languageSelect.value : "auto";
@@ -1117,6 +1283,10 @@
     #tel-downloader-progress-bar-container .tel-panel-heading { padding: 10px 12px; flex-shrink: 0; }
     #tel-downloader-progress-bar-container .tel-panel-title { min-width: 0; overflow-wrap: anywhere; }
     #tel-downloader-progress-bar-container .tel-panel-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    #tel-downloader-progress-bar-container .tel-cancel-all { display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 5px; }
+    #tel-downloader-progress-bar-container .tel-batch-notice { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--tel-line); }
+    #tel-downloader-progress-bar-container .tel-batch-notice p { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    #tel-downloader-progress-bar-container .tel-batch-notice button { flex-shrink: 0; }
     #tel-downloader-progress-bar-container .tel-language-setting { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; flex-shrink: 0; }
     #tel-downloader-progress-bar-container .tel-language-setting label { flex: 1; min-width: 0; color: var(--tel-muted); overflow-wrap: anywhere; }
     #tel-downloader-progress-bar-container select { width: 150px; max-width: 55%; min-width: 0; min-height: 32px; font: inherit; color: var(--tel-fg); background: var(--tel-bg); border: 1px solid var(--tel-line); border-radius: 6px; padding: 4px; }
@@ -1144,6 +1314,12 @@
     #tel-downloader-progress-bar-container .tel-indeterminate > div { width: 35% !important; animation: tel-download-progress 1.4s infinite ease-in-out; }
     @keyframes tel-download-progress { from { left: -35%; } to { left: 100%; } }
     @media (prefers-reduced-motion: reduce) { #tel-downloader-progress-bar-container .tel-indeterminate > div { animation: none; left: 32%; } }
+    #bubble-contextmenu .tel-context-download { width: 100%; border: 0; text-align: inherit; font: inherit; color: inherit; cursor: pointer; }
+    #bubble-contextmenu .tel-context-download:focus-visible, .tel-selection-download:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+    .selection-wrapper:has(> .tel-selection-download) { flex-direction: row; }
+    .selection-wrapper:has(> .tel-selection-download) > .selection-container { flex: 1 1 auto; min-width: 0; }
+    .selection-wrapper > .tel-selection-download { flex-shrink: 0; align-self: center; margin-inline: 4px; }
+    .tel-selection-download:disabled { opacity: .5; cursor: default; }
   `;
   document.head.appendChild(style);
   document.body.appendChild(panel);
@@ -1151,10 +1327,14 @@
 
   const isWebK = location.hostname === "webk.telegram.org" || location.pathname.startsWith("/k/");
   const isWebA = location.hostname === "webz.telegram.org" || location.pathname.startsWith("/a/");
+  if (isWebK) {
+    document.addEventListener("contextmenu", captureWebKContext, true);
+    document.addEventListener("mouseup", captureWebKContext, true);
+  }
   const refreshApp = isWebK ? refreshWebK : isWebA ? refreshWebA : null;
   if (refreshApp) {
     const roots = isWebK
-      ? ".media-viewer-whole, #stories-viewer, .pinned-audio, audio-element"
+      ? ".media-viewer-whole, #stories-viewer, .pinned-audio, audio-element, .selection-wrapper, #bubble-contextmenu"
       : "#MediaViewer, #StoryViewer";
     let pending;
     const scheduleRefresh = () => {
@@ -1167,7 +1347,7 @@
     const observer = new MutationObserver((records) => {
       if (records.some((record) => {
         const target = record.target instanceof Element ? record.target : record.target.parentElement;
-        if (target?.closest("#tel-downloader-progress-bar-container, .tel-download, ._tel_download_button_pinned_container")) return false;
+        if (target?.closest("#tel-downloader-progress-bar-container, .tel-download, ._tel_download_button_pinned_container, .tel-context-download, .tel-selection-download")) return false;
         return target?.closest(roots) || Array.from(record.addedNodes).some((node) =>
           node instanceof Element && (node.matches(roots) || node.querySelector(roots))
         );
