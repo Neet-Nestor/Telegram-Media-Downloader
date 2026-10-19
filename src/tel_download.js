@@ -470,6 +470,30 @@
     logger.info("Download triggered", fileName);
   };
 
+  const getMediaSource = (media) =>
+    media?.currentSrc || media?.src || media?.querySelector("source")?.src;
+
+  const downloadCurrentWebKMedia = () => {
+    // The toolbar can outlive its media node. Resolve both at click time.
+    const viewer = document.querySelector(".media-viewer-whole");
+    if (!viewer) return;
+    const buttons = viewer.querySelector(".media-viewer-topbar .media-viewer-buttons");
+    const nativeDownload = buttons && getWebKDownloadButtons(buttons).find(
+      (button) => !button.disabled && !button.matches(
+        '.quality-download-options-button-menu, .btn-menu-toggle, [aria-haspopup="menu"], [aria-haspopup="true"]'
+      )
+    );
+    if (nativeDownload) {
+      nativeDownload.click();
+      return;
+    }
+    const media = viewer.querySelector(".media-viewer-movers .media-viewer-aspecter");
+    const videoUrl = getMediaSource(media?.querySelector("video"));
+    const imageUrl = getMediaSource(media?.querySelector("img.thumbnail"));
+    if (videoUrl) tel_download_video(videoUrl);
+    else if (imageUrl) tel_download_image(imageUrl);
+  };
+
   logger.info("Initialized");
 
   // For webz /a/ webapp
@@ -741,17 +765,6 @@
 
     // Recognize native downloads by their purpose, not their font code point.
     const nativeDownloadButtons = getWebKDownloadButtons(mediaButtons);
-    const nativeDirectDownload = nativeDownloadButtons.find(
-      (button) =>
-        !button.disabled &&
-        !button.matches(
-          '.quality-download-options-button-menu, .btn-menu-toggle, [aria-haspopup="menu"], [aria-haspopup="true"]'
-        )
-    );
-    // A quality menu supplies an icon, but clicking it only opens a menu.
-    const onDownload = nativeDirectDownload
-      ? () => nativeDirectDownload.click()
-      : null;
     if (nativeDownloadButtons.length > 0) {
       mediaButtons.querySelectorAll("button.tel-download").forEach((button) => {
         button.remove();
@@ -780,13 +793,7 @@
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
-        if (onDownload) {
-          downloadButton.onclick = onDownload;
-        } else {
-          downloadButton.onclick = () => {
-            tel_download_video(mediaAspecter.querySelector("video").src);
-          };
-        }
+        downloadButton.onclick = downloadCurrentWebKMedia;
         brControls.prepend(downloadButton);
       }
     } else if (
@@ -801,13 +808,7 @@
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
-      if (onDownload) {
-        downloadButton.onclick = onDownload;
-      } else {
-        downloadButton.onclick = () => {
-          tel_download_video(mediaAspecter.querySelector("video").src);
-        };
-      }
+      downloadButton.onclick = downloadCurrentWebKMedia;
       mediaButtons.prepend(downloadButton);
     } else if (!hasDownloadButton) {
       // 3. Image without download button detected
@@ -824,13 +825,7 @@
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
-      if (onDownload) {
-        downloadButton.onclick = onDownload;
-      } else {
-        downloadButton.onclick = () => {
-          tel_download_image(mediaAspecter.querySelector("img.thumbnail").src);
-        };
-      }
+      downloadButton.onclick = downloadCurrentWebKMedia;
       mediaButtons.prepend(downloadButton);
     }
   }, REFRESH_DELAY);

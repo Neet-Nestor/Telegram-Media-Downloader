@@ -20,6 +20,7 @@ exports.openPage = async (browser, html = '', pathname = '/k/') => {
   await page.evaluate(() => {
     window.ticks = [];
     window.setInterval = fn => ticks.push(fn);
+    window.refresh = () => ticks.forEach(fn => fn());
     window.unsafeWindow = window;
     delete window.showSaveFilePicker;
     window.saved = [];
