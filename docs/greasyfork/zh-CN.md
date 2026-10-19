@@ -22,7 +22,7 @@
 ![视频下载](https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMXcxYnJxaXMxcW05YW5rZ2YzZzE0bTU4aTBwYXI1N3pmdnVzbDFrdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EEPbblwmSpteAmwLls/giphy.gif)
 ![Story下载](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ3Z5Y2VzM2QzbW1xc3ZwNTQ2N3Q0a3lnanpxdW55c2Qzajl5NXZsaCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/xJFjBGi8isHPR5cuHl/giphy.gif)
 
-开始下载的视频会在页面右下角显示下载进度。图片和音频不会显示下载进度。
+通过脚本下载的视频、图片和音频都会显示在右下角的任务面板中。最多同时下载两个文件，其余任务自动排队。
 
 ### 支持的 Webapp 版本
 Telegram 网页版有两个不同的版本：
@@ -33,7 +33,7 @@ Telegram 网页版有两个不同的版本：
 这个脚本主要功能应该适用于这两个版本的网页版，但有些功能只在/k/版本有效（如语音消息下载），因此当有些功能无法使用时建议切换到/k/版本。
 
 ### 检查下载进度
-如果你想要检查当前的下载进度，你可以查看页面右下角的进度条（如果下载的是视频）或者[打开浏览器的开发者工具 -> 控制台](https://developer.chrome.com/docs/devtools/open/)查看文本输出。
+任务面板显示已接收大小、速度，以及总大小已知时的进度。**Hide** 收起面板，**×** 隐藏单个任务，均不会中断下载；**Cancel** 取消下载，**Retry** 从头重试。**Completed** 表示直接保存成功，**Sent to browser** 表示已交给浏览器下载管理器，请在那里确认最终保存结果。传输完成前请保持 Telegram 标签页打开。错误信息也会显示在[浏览器控制台](https://developer.chrome.com/docs/devtools/open/)中。
 
 ## 汇报问题
 如果在使用这个脚本时遇到任何问题，请到我们的 [GitHub页面](https://github.com/Neet-Nestor/Telegram-Media-Downloader) 提出问题。

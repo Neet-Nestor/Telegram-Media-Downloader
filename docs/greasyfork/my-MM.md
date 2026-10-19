@@ -22,7 +22,7 @@ Userscript extension တစ်ခုကို install လုပ်ပြီး �
 ![ဗီဒီယို ဒေါင်းလုပ်](https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMXcxYnJxaXMxcW05YW5rZ2YzZzE0bTU4aTBwYXI1N3pmdnVzbDFrdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EEPbblwmSpteAmwLls/giphy.gif)
 ![Story ဒေါင်းလုပ်](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ3Z5Y2VzM2QzbW1xc3ZwNTQ2N3Q0a3lnanpxdW55c2Qzajl5NXZsaCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/xJFjBGi8isHPR5cuHl/giphy.gif)
 
-ဗီဒီယိုဒေါင်းလုပ် လုပ်တဲ့အခါ ဒေါင်းလုပ် စတင်ပြီးနောက် screen ရဲ့ အောက်ညာဘက်ထောင့်မှာ Progress Bar ပေါ်လာပါလိမ့်မယ်။ ဓာတ်ပုံ နဲ့ အသံဒေါင်းလုပ်တွေ အတွက်တော့ Progress Bar ပေါ်မှာမဟုတ်ပါဘူး။
+ဒီ script နဲ့ ဒေါင်းလုပ်လုပ်တဲ့ ဗီဒီယို၊ ဓာတ်ပုံနဲ့ အသံဖိုင်တွေကို screen အောက်ညာဘက်က Downloads panel မှာ တွေ့ရပါမယ်။ တစ်ချိန်တည်းမှာ ဖိုင်နှစ်ခုအထိ ဒေါင်းလုပ်လုပ်နိုင်ပြီး ကျန်တဲ့ဖိုင်တွေက အလှည့်စောင့်နေပါမယ်။
 
 ### Support လုပ်ထားသော Webapp ဗားရှင်းများ
 Telegram Webapp မှာ ဗားရှင်း (၂) မျိုး ရှိပါတယ်:
@@ -32,7 +32,7 @@ Telegram Webapp မှာ ဗားရှင်း (၂) မျိုး ရှ�
 ဒီ script က ဗားရှင်းနှစ်မျိုးလုံးမှာ အလုပ်လုပ်နိုင်ပေမယ့် Feature တချို့ (ဥပမာ — အသံမက်ဆေ့ချ် ဒေါင်းလုဒ်) က /k/ ဗားရှင်းမှာပဲ ရပါတယ်။ တချို့ Feature တွေ အလုပ်မလုပ်ဘူးဆိုရင် /k/ ဗားရှင်းကို ပြောင်းသုံးဖို့ အကြံပြုပါတယ်။
 
 ### ဒေါင်းလုပ် Progress စစ်ဆေးနည်း
-ဗီဒီယိုတွေအတွက် screen အောက်ညာဘက်မှာ Progress Bar ကို တွေ့ရပါလိမ့်မယ်။ Log တွေကို [DevTools console](https://developer.chrome.com/docs/devtools/open/) မှာလည်း စစ်ဆေးနိုင်ပါတယ်။
+Downloads panel မှာ လက်ခံရရှိပြီးတဲ့ ဖိုင်အရွယ်အစား၊ မြန်နှုန်းနဲ့ စုစုပေါင်းအရွယ်အစားသိရရင် ရာခိုင်နှုန်းကို ပြပေးပါမယ်။ **Hide** နဲ့ **×** ကိုနှိပ်ရင် ဒေါင်းလုပ်က ဆက်လုပ်နေပါမယ်။ **Cancel** က ဒေါင်းလုပ်ကို ပယ်ဖျက်ပြီး **Retry** က အစကနေ ပြန်စပါမယ်။ **Completed** ဆိုရင် ဖိုင်သိမ်းဆည်းပြီးပါပြီ။ **Sent to browser** ဆိုရင် browser ရဲ့ download manager မှာ သိမ်းဆည်းမှုရလဒ်ကို စစ်ဆေးပါ။ ဒေတာလွှဲပြောင်းမှုပြီးတဲ့အထိ Telegram tab ကို ဖွင့်ထားပါ။ Log တွေကို [DevTools console](https://developer.chrome.com/docs/devtools/open/) မှာလည်း စစ်ဆေးနိုင်ပါတယ်။
 
 ## Author ကို Support လုပ်လိုပါက
 ဒီ script ကို ကြိုက်နှစ်သက်တယ်ဆိုရင် [Venmo](https://venmo.com/u/NeetNestor) (သို့) [buy me a coffee](https://ko-fi.com/neetnestor) ကနေ support လုပ်နိုင်ပါတယ်။ :)

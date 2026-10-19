@@ -21,7 +21,7 @@ This script only works on Telegram Webapp. It adds a download button for images,
 ![Video Download](https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMXcxYnJxaXMxcW05YW5rZ2YzZzE0bTU4aTBwYXI1N3pmdnVzbDFrdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EEPbblwmSpteAmwLls/giphy.gif)
 ![Story Download](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ3Z5Y2VzM2QzbW1xc3ZwNTQ2N3Q0a3lnanpxdW55c2Qzajl5NXZsaCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/xJFjBGi8isHPR5cuHl/giphy.gif)
 
-For videos, a progress bar will show on the bottom-right corder after you started downloading. For images and audios, there won't be a progress bar.
+Downloads started by the script appear in a task panel at the bottom-right, including videos, images, and audio. Up to two files download at once; additional files wait in the queue.
 
 ### Supported Webapp Versions
 There are 2 different versions of telegram webapps:
@@ -31,7 +31,7 @@ There are 2 different versions of telegram webapps:
 This script should work on both versions of webapp, but some features are only available in the /k/ version (such as voice message downloads). If certain features are not working, switching to the /k/ version is recommended.
 
 ### Check Downloading Progress
-A progress bar will show on the bottom-right of the screen for videos. You can also check [DevTools console](https://developer.chrome.com/docs/devtools/open/) for logs.
+The panel shows received size, speed, and progress when the total size is known. **Hide** and **×** leave downloads running; **Cancel** stops them. **Retry** starts again from the beginning. **Completed** confirms direct file saving; **Sent to browser** means you should check the browser's download manager. Keep the Telegram tab open until the transfer finishes. You can also check [DevTools console](https://developer.chrome.com/docs/devtools/open/) for logs.
 
 ## Support Author
 If you like this script, you can support me via [Venmo](https://venmo.com/u/NeetNestor) or [buy me a coffee](https://ko-fi.com/neetnestor) :)

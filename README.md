@@ -64,7 +64,7 @@ For channels and chats that disable downloading and restrict saving content, thi
 ![Video Download](https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMXcxYnJxaXMxcW05YW5rZ2YzZzE0bTU4aTBwYXI1N3pmdnVzbDFrdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/EEPbblwmSpteAmwLls/giphy.gif)
 ![Story Download](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ3Z5Y2VzM2QzbW1xc3ZwNTQ2N3Q0a3lnanpxdW55c2Qzajl5NXZsaCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/xJFjBGi8isHPR5cuHl/giphy.gif)
 
-For videos, a progress bar will show on the bottom-right corder after you started downloading. For images and audios, there won't be a progress bar.
+Downloads started by this script appear in a task panel at the bottom-right, including videos, images, and audio. Telegram's own download controls continue to use Telegram's interface.
 
 ### Supported Webapp Versions
 There are 2 different versions of telegram webapps:
@@ -74,7 +74,14 @@ There are 2 different versions of telegram webapps:
 This script should work on both versions of webapp, but some features are only available in the /k/ version (such as voice message downloads). If certain features are not working, switching to the /k/ version is recommended.
 
 ### Check Downloading Progress
-A progress bar will show on the bottom-right of the screen for videos. You can also check [DevTools console](https://developer.chrome.com/docs/devtools/open/) for logs.
+The task panel shows the filename, received size, and download speed. When the total size is known, it also shows a percentage. Up to two files download at once; additional files wait in the queue. Clicking the same media again focuses its active task.
+
+- **Hide** collapses the panel. **×** dismisses one task card. Both leave downloads running.
+- **Cancel** stops a queued or active download and discards unfinished file writes. Cancellation is disabled while the completed file is being committed.
+- **Retry** restarts a failed or cancelled download from the beginning. If the media URL has expired, reopen the media and use its download button again.
+- **Completed** means direct file saving succeeded. **Sent to browser** means the file was handed to the browser's download manager; check that manager for the final save result.
+
+Keep the Telegram tab open until the transfer finishes. Browsers without direct file saving collect the downloaded data before handing it to the download manager, so large downloads can use substantial browser resources. Errors are also available in the [DevTools console](https://developer.chrome.com/docs/devtools/open/).
 
 ## Contributing
 
