@@ -209,3 +209,46 @@ test('downloads work when the script manager does not expose unsafeWindow', asyn
   });
   assert.deepEqual(result, { saved: 1, errors: [] });
 });
+
+test('data is written and progress advances before the response finishes', async () => {
+  page = await openPage(browser);
+  const result = await page.evaluate(async () => {
+    let stream;
+    const writes = [];
+    let closed = false;
+    window.showSaveFilePicker = async () => ({ createWritable: async () => ({
+      write: async bytes => { writes.push(...bytes); },
+      close: async () => { closed = true; }, abort: async () => {},
+    }) });
+    fetch = async () => new Response(new ReadableStream({ start(controller) { stream = controller; } }), {
+      status: 206, headers: { 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 0-5/6' },
+    });
+    const done = downloads.video('https://test.invalid/video');
+    await settle();
+    stream.enqueue(new Uint8Array([1, 2, 3]));
+    await settle();
+    const partial = { written: writes.length, progress: document.querySelector('.progress p').textContent, closed };
+    stream.enqueue(new Uint8Array([4, 5, 6]));
+    stream.close();
+    await done;
+    return { partial, written: writes, closed, errors };
+  });
+  assert.deepEqual(result.partial, { written: 3, progress: '50%', closed: false });
+  assert.deepEqual(result.written, [1, 2, 3, 4, 5, 6]);
+  assert.equal(result.closed, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test('stalled response bodies time out instead of remaining pending', async () => {
+  page = await openPage(browser);
+  const result = await page.evaluate(async () => {
+    const originalTimeout = window.setTimeout;
+    window.setTimeout = (fn, delay, ...args) => originalTimeout(fn, delay === 30000 ? 10 : delay, ...args);
+    fetch = async () => new Response(new ReadableStream({ start() {} }), { headers: { 'Content-Type': 'video/mp4' } });
+    await downloads.video('https://test.invalid/video');
+    return { saved: saved.length, errors };
+  });
+  assert.equal(result.saved, 0);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /30 seconds/);
+});

@@ -80,49 +80,104 @@
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 2000;
   const DOWNLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
-  const fetchMediaPart = async (url, offset, total, kind) => {
-    const res = await fetch(url, {
-      headers: { Range: `bytes=${offset}-${offset + DOWNLOAD_CHUNK_SIZE - 1}` },
-    });
-    if (res.status !== 200 && res.status !== 206) {
-      throw new Error(`Download request failed (HTTP ${res.status})`);
-    }
-    const mime = res.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
-    if (!mime?.startsWith(`${kind}/`)) {
-      throw new Error(`Expected ${kind}, received ${mime || "an unknown file type"}`);
-    }
-    let expectedSize;
-    let totalSize;
-    if (res.status === 206) {
-      const match = res.headers.get("Content-Range")?.match(contentRangeRegex);
-      if (!match) throw new Error("Missing or invalid Content-Range");
-      const [start, end, size] = match.slice(1).map(Number);
-      if (
-        ![start, end, size].every(Number.isSafeInteger) ||
-        start !== offset || end < start || size <= end ||
-        (total !== null && total !== size)
-      ) {
-        throw new Error("Inconsistent media range; download stopped to avoid a corrupt file");
+  const fetchMediaPart = async (url, offset, total, kind, options = {}) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort(options.signal.reason);
+    let timer;
+    let reader;
+    const resetTimeout = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(
+        new DOMException("No data received for 30 seconds. Please retry.", "TimeoutError")
+      ), 30000);
+    };
+    const checkAborted = () => {
+      if (controller.signal.aborted) throw controller.signal.reason;
+    };
+    if (options.signal?.aborted) abort();
+    options.signal?.addEventListener("abort", abort, { once: true });
+    resetTimeout();
+    try {
+      checkAborted();
+      const res = await fetch(url, {
+        headers: { Range: `bytes=${offset}-${offset + DOWNLOAD_CHUNK_SIZE - 1}` },
+        signal: controller.signal,
+      });
+      if (res.status !== 200 && res.status !== 206) {
+        throw new Error(`Download request failed (HTTP ${res.status})`);
       }
-      expectedSize = end - start + 1;
-      totalSize = size;
-    } else {
-      // A server may ignore Range and return the entire resource, but only
-      // accept that on the first request so we cannot append it twice.
-      if (offset !== 0) throw new Error("Server stopped supporting partial downloads");
-      const length = res.headers.get("Content-Length");
-      if (length !== null && !res.headers.has("Content-Encoding")) {
-        if (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length))) {
-          throw new Error("Invalid Content-Length");
+      const mime = res.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+      if (!mime?.startsWith(`${kind}/`)) {
+        throw new Error(`Expected ${kind}, received ${mime || "an unknown file type"}`);
+      }
+      let expectedSize;
+      let totalSize;
+      if (res.status === 206) {
+        const match = res.headers.get("Content-Range")?.match(contentRangeRegex);
+        if (!match) throw new Error("Missing or invalid Content-Range");
+        const [start, end, size] = match.slice(1).map(Number);
+        if (! [start, end, size].every(Number.isSafeInteger) ||
+            start !== offset || end < start || size <= end ||
+            (total !== null && total !== size)) {
+          throw new Error("Inconsistent media range; download stopped to avoid a corrupt file");
         }
-        expectedSize = Number(length);
+        expectedSize = end - start + 1;
+        totalSize = size;
+      } else {
+        if (offset !== 0) throw new Error("Server stopped supporting partial downloads");
+        const length = res.headers.get("Content-Length");
+        if (length !== null && !res.headers.has("Content-Encoding")) {
+          if (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length))) {
+            throw new Error("Invalid Content-Length");
+          }
+          expectedSize = Number(length);
+          totalSize = expectedSize;
+        }
+      }
+      if (!res.body) throw new Error("Empty media response");
+      reader = res.body.getReader();
+      controller.signal.addEventListener("abort", () => {
+        reader.cancel().catch(() => {});
+      }, { once: true });
+      const chunks = [];
+      let received = 0;
+      options.onProgress?.(offset, totalSize ?? null);
+      while (true) {
+        checkAborted();
+        const { value, done } = await reader.read();
+        checkAborted();
+        if (done) break;
+        received += value.byteLength;
+        if (expectedSize !== undefined && received > expectedSize) {
+          throw new Error("Media response exceeds the expected size");
+        }
+        // Wait for disk writes before reading more data, so slow disks do not
+        // cause an unbounded queue of writes or large in-memory responses.
+        clearTimeout(timer);
+        if (options.write) await options.write(value);
+        else chunks.push(value);
+        checkAborted();
+        resetTimeout();
+        options.onProgress?.(offset + received, totalSize ?? null);
+      }
+      if (!received || (expectedSize !== undefined && received !== expectedSize)) {
+        throw new Error("Incomplete media response; received byte count does not match");
+      }
+      return {
+        blob: options.write ? null : new Blob(chunks, { type: mime }),
+        mime, totalSize: totalSize ?? received, nextOffset: offset + received,
+      };
+    } catch (error) {
+      controller.abort(error);
+      throw controller.signal.reason || error;
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abort);
+      if (reader) {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
       }
     }
-    const blob = await res.blob();
-    if (blob.size === 0 || (expectedSize !== undefined && blob.size !== expectedSize)) {
-      throw new Error("Incomplete media response; received byte count does not match");
-    }
-    return { blob, mime, totalSize: totalSize ?? blob.size, nextOffset: offset + blob.size };
   };
   const hashCode = (s) => {
     var h = 0,
@@ -258,8 +313,8 @@
     if (!innerContainer) return;
     innerContainer.querySelector("p.filename").innerText = fileName;
     const progressBar = innerContainer.querySelector("div.progress");
-    progressBar.querySelector("p").innerText = progress + "%";
-    progressBar.querySelector("div").style.width = progress + "%";
+    progressBar.querySelector("p").innerText = progress === null ? "Downloading" : progress + "%";
+    progressBar.querySelector("div").style.width = (progress ?? 0) + "%";
   };
 
   const completeProgress = (videoId) => {
@@ -301,9 +356,12 @@
       let total = null;
       let mime;
       do {
-        const part = await fetchMediaPart(url, offset, total, kind);
-        if (writable) await writable.write(part.blob);
-        else parts.push(part.blob);
+        const part = await fetchMediaPart(url, offset, total, kind, {
+          write: writable ? (chunk) => writable.write(chunk) : undefined,
+          onProgress: (received, size) => updateProgress(id, fileName,
+            size ? ((received * 100) / size).toFixed(0) : null),
+        });
+        if (!writable) parts.push(part.blob);
         offset = part.nextOffset;
         total = part.totalSize;
         mime = part.mime;
