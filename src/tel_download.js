@@ -22,6 +22,161 @@
 
 
 (function () {
+  // Keep translations in the userscript so installation needs no extra files.
+  const UI_LANGUAGES = {
+    en: "English", "zh-CN": "简体中文", "zh-TW": "繁體中文", ru: "Русский", my: "မြန်မာ",
+  };
+  const UI_MESSAGES = {
+    en: {
+      downloads: "Downloads", downloadsCount: "Downloads ({count})", mediaDownloads: "Media downloads",
+      download: "Download", loadingMedia: "Media is loading", hide: "Hide", show: "Show",
+      dismiss: "Dismiss download", progress: "Download progress", cancel: "Cancel", retry: "Retry",
+      language: "Interface language", automatic: "Browser language",
+      preparing: "Preparing", queued: "Queued", downloading: "Downloading", saving: "Saving",
+      completed: "Completed", handedOff: "Sent to browser", failed: "Failed", cancelled: "Cancelled",
+      rate: "{speed}/s", video: "video", audio: "audio", image: "image", unknownType: "an unknown file type",
+      errorHttp: "Download request failed (HTTP {status})",
+      errorMime: "Expected {kind}, received {mime}",
+      errorRangeMissing: "Missing or invalid Content-Range",
+      errorRangeInconsistent: "Inconsistent media range; download stopped to avoid a corrupt file",
+      errorRangeUnsupported: "Server stopped supporting partial downloads",
+      errorLength: "Invalid Content-Length", errorEmpty: "Empty media response",
+      errorTooLarge: "Media response exceeds the expected size",
+      errorIncomplete: "Incomplete media response; received byte count does not match",
+      errorTimeout: "No data received for 30 seconds. Please retry.",
+      errorUnexpected: "Download failed: {message}",
+    },
+    "zh-CN": {
+      downloads: "下载", downloadsCount: "下载（{count}）", mediaDownloads: "媒体下载",
+      download: "下载", loadingMedia: "媒体正在加载", hide: "收起", show: "展开",
+      dismiss: "移除下载卡片", progress: "下载进度", cancel: "取消", retry: "重试",
+      language: "界面语言", automatic: "跟随浏览器",
+      preparing: "准备中", queued: "排队中", downloading: "下载中", saving: "保存中",
+      completed: "已完成", handedOff: "已交给浏览器", failed: "失败", cancelled: "已取消",
+      rate: "{speed}/秒", video: "视频", audio: "音频", image: "图片", unknownType: "未知文件类型",
+      errorHttp: "下载请求失败（HTTP {status}）",
+      errorMime: "预期为{kind}，实际收到 {mime}",
+      errorRangeMissing: "缺少 Content-Range，或其格式无效",
+      errorRangeInconsistent: "媒体数据范围不一致；已停止下载，避免保存损坏的文件",
+      errorRangeUnsupported: "服务器不再支持分段下载",
+      errorLength: "Content-Length 无效", errorEmpty: "媒体响应为空",
+      errorTooLarge: "收到的媒体数据超出预期大小",
+      errorIncomplete: "媒体数据不完整；收到的字节数与预期不符",
+      errorTimeout: "已连续 30 秒未收到数据，请重试。",
+      errorUnexpected: "下载失败：{message}",
+    },
+    "zh-TW": {
+      downloads: "下載", downloadsCount: "下載（{count}）", mediaDownloads: "媒體下載",
+      download: "下載", loadingMedia: "媒體正在載入", hide: "收合", show: "展開",
+      dismiss: "移除下載卡片", progress: "下載進度", cancel: "取消", retry: "重試",
+      language: "介面語言", automatic: "跟隨瀏覽器",
+      preparing: "準備中", queued: "排隊中", downloading: "下載中", saving: "儲存中",
+      completed: "已完成", handedOff: "已交給瀏覽器", failed: "失敗", cancelled: "已取消",
+      rate: "{speed}/秒", video: "影片", audio: "音訊", image: "圖片", unknownType: "未知檔案類型",
+      errorHttp: "下載請求失敗（HTTP {status}）",
+      errorMime: "預期為{kind}，實際收到 {mime}",
+      errorRangeMissing: "缺少 Content-Range，或其格式無效",
+      errorRangeInconsistent: "媒體資料範圍不一致；已停止下載，避免儲存損壞的檔案",
+      errorRangeUnsupported: "伺服器不再支援分段下載",
+      errorLength: "Content-Length 無效", errorEmpty: "媒體回應為空",
+      errorTooLarge: "收到的媒體資料超出預期大小",
+      errorIncomplete: "媒體資料不完整；收到的位元組數與預期不符",
+      errorTimeout: "已連續 30 秒未收到資料，請重試。",
+      errorUnexpected: "下載失敗：{message}",
+    },
+    ru: {
+      downloads: "Загрузки", downloadsCount: "Загрузки ({count})", mediaDownloads: "Загрузка медиа",
+      download: "Скачать", loadingMedia: "Медиа загружается", hide: "Свернуть", show: "Развернуть",
+      dismiss: "Убрать карточку загрузки", progress: "Ход загрузки", cancel: "Отменить", retry: "Повторить",
+      language: "Язык интерфейса", automatic: "Язык браузера",
+      preparing: "Подготовка", queued: "В очереди", downloading: "Загрузка", saving: "Сохранение",
+      completed: "Завершено", handedOff: "Передано браузеру", failed: "Ошибка", cancelled: "Отменено",
+      rate: "{speed}/с", video: "видео", audio: "аудио", image: "изображение", unknownType: "неизвестный тип файла",
+      errorHttp: "Ошибка запроса загрузки (HTTP {status})",
+      errorMime: "Ожидалось: {kind}. Получено: {mime}",
+      errorRangeMissing: "Заголовок Content-Range отсутствует или некорректен",
+      errorRangeInconsistent: "Диапазоны данных не совпадают; загрузка остановлена во избежание повреждения файла",
+      errorRangeUnsupported: "Сервер больше не поддерживает загрузку по частям",
+      errorLength: "Некорректный Content-Length", errorEmpty: "Получен пустой ответ с медиа",
+      errorTooLarge: "Размер полученных данных превышает ожидаемый",
+      errorIncomplete: "Данные неполные; число полученных байтов не совпадает с ожидаемым",
+      errorTimeout: "Нет данных в течение 30 секунд. Повторите попытку.",
+      errorUnexpected: "Не удалось скачать: {message}",
+    },
+    my: {
+      downloads: "ဒေါင်းလုဒ်များ", downloadsCount: "ဒေါင်းလုဒ်များ ({count})", mediaDownloads: "မီဒီယာဒေါင်းလုဒ်များ",
+      download: "ဒေါင်းလုဒ်လုပ်ရန်", loadingMedia: "မီဒီယာကို ဖွင့်နေသည်", hide: "ဖျောက်ရန်", show: "ပြရန်",
+      dismiss: "ဒေါင်းလုဒ်ကတ်ကို ဖယ်ရှားရန်", progress: "ဒေါင်းလုဒ်တိုးတက်မှု", cancel: "ပယ်ဖျက်ရန်", retry: "ထပ်စမ်းရန်",
+      language: "မျက်နှာပြင်ဘာသာစကား", automatic: "ဘရောက်ဇာဘာသာစကား",
+      preparing: "ပြင်ဆင်နေသည်", queued: "စောင့်ဆိုင်းနေသည်", downloading: "ဒေါင်းလုဒ်လုပ်နေသည်", saving: "သိမ်းဆည်းနေသည်",
+      completed: "ပြီးစီးပြီ", handedOff: "ဘရောက်ဇာသို့ လွှဲပေးပြီး", failed: "မအောင်မြင်ပါ", cancelled: "ပယ်ဖျက်ပြီး",
+      rate: "{speed}/စက္ကန့်", video: "ဗီဒီယို", audio: "အသံ", image: "ပုံ", unknownType: "အမည်မသိ ဖိုင်အမျိုးအစား",
+      errorHttp: "ဒေါင်းလုဒ်တောင်းဆိုမှု မအောင်မြင်ပါ (HTTP {status})",
+      errorMime: "မျှော်လင့်ထားသည်မှာ {kind}၊ ရရှိသည်မှာ {mime}",
+      errorRangeMissing: "Content-Range မရှိပါ သို့မဟုတ် မမှန်ကန်ပါ",
+      errorRangeInconsistent: "မီဒီယာဒေတာအပိုင်းများ မကိုက်ညီပါ။ ဖိုင်မပျက်စီးစေရန် ဒေါင်းလုဒ်ကို ရပ်လိုက်သည်",
+      errorRangeUnsupported: "ဆာဗာသည် အပိုင်းလိုက်ဒေါင်းလုဒ်ကို မပံ့ပိုးတော့ပါ",
+      errorLength: "Content-Length မမှန်ကန်ပါ", errorEmpty: "မီဒီယာတုံ့ပြန်မှုတွင် ဒေတာမပါပါ",
+      errorTooLarge: "ရရှိသော မီဒီယာဒေတာသည် မျှော်လင့်ထားသည့် ပမာဏထက် ကျော်လွန်နေသည်",
+      errorIncomplete: "မီဒီယာဒေတာ မပြည့်စုံပါ။ ရရှိသော ဘိုက်အရေအတွက် မကိုက်ညီပါ",
+      errorTimeout: "စက္ကန့် ၃၀ ကြာ ဒေတာမရရှိပါ။ ထပ်စမ်းပါ။",
+      errorUnexpected: "ဒေါင်းလုဒ် မအောင်မြင်ပါ: {message}",
+    },
+  };
+  const LANGUAGE_STORAGE_KEY = "tel-media-downloader-language";
+  const matchLanguage = (tag) => {
+    const parts = String(tag || "").toLowerCase().replace(/_/g, "-").split("-");
+    if (parts[0] === "zh") {
+      if (parts.includes("hant")) return "zh-TW";
+      if (parts.includes("hans")) return "zh-CN";
+      return parts.some(part => ["tw", "hk", "mo"].includes(part)) ? "zh-TW" : "zh-CN";
+    }
+    return Object.hasOwn(UI_LANGUAGES, parts[0]) ? parts[0] : null;
+  };
+  const readLanguagePreference = () => {
+    try {
+      const value = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      return Object.hasOwn(UI_LANGUAGES, value) ? value : "auto";
+    } catch {
+      return "auto";
+    }
+  };
+  let languagePreference = readLanguagePreference();
+  const resolveLanguage = () => languagePreference !== "auto" ? languagePreference :
+    (navigator.languages || [navigator.language]).map(matchLanguage).find(Boolean) || "en";
+  let uiLanguage = resolveLanguage();
+  const translate = (language, key, params = {}) =>
+    (UI_MESSAGES[language]?.[key] ?? UI_MESSAGES.en[key] ?? key).replace(
+      /\{(\w+)\}/g, (placeholder, name) => Object.hasOwn(params, name) ? String(params[name]) : placeholder
+    );
+  const t = (key, params) => translate(uiLanguage, key, params);
+  let integerFormat = new Intl.NumberFormat(uiLanguage, { maximumFractionDigits: 0 });
+  let decimalFormat = new Intl.NumberFormat(uiLanguage, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const downloadError = (key, params = {}, name = "Error") => {
+    // Keep diagnostic messages stable; render the structured error in the current UI language.
+    const diagnostic = { ...params };
+    if (key === "errorMime") {
+      diagnostic.kind = translate("en", params.kind);
+      diagnostic.mime ||= translate("en", "unknownType");
+    }
+    return Object.assign(new Error(translate("en", key, diagnostic)), { name, translationKey: key, params });
+  };
+  const formatDownloadError = (error) => {
+    if (!error) return "";
+    if (!error.translationKey) return t("errorUnexpected", { message: error.message || String(error) });
+    const params = { ...error.params };
+    if (error.translationKey === "errorMime") {
+      params.kind = t(params.kind);
+      params.mime ||= t("unknownType");
+    }
+    return t(error.translationKey, params);
+  };
+  const localizeDownloadButton = (button, loading = false) => {
+    const label = t(loading ? "loadingMedia" : "download");
+    if (button.title !== label) button.title = label;
+    if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
+    if (button.lang !== uiLanguage) button.lang = uiLanguage;
+  };
   const logger = {
     info: (message, fileName = null) => {
       console.log(
@@ -88,7 +243,7 @@
     const resetTimeout = () => {
       clearTimeout(timer);
       timer = setTimeout(() => controller.abort(
-        new DOMException("No data received for 30 seconds. Please retry.", "TimeoutError")
+        downloadError("errorTimeout", {}, "TimeoutError")
       ), 30000);
     };
     const checkAborted = () => {
@@ -104,37 +259,37 @@
         signal: controller.signal,
       });
       if (res.status !== 200 && res.status !== 206) {
-        throw new Error(`Download request failed (HTTP ${res.status})`);
+        throw downloadError("errorHttp", { status: res.status });
       }
       const mime = res.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
       if (!mime?.startsWith(`${kind}/`)) {
-        throw new Error(`Expected ${kind}, received ${mime || "an unknown file type"}`);
+        throw downloadError("errorMime", { kind, mime });
       }
       let expectedSize;
       let totalSize;
       if (res.status === 206) {
         const match = res.headers.get("Content-Range")?.match(contentRangeRegex);
-        if (!match) throw new Error("Missing or invalid Content-Range");
+        if (!match) throw downloadError("errorRangeMissing");
         const [start, end, size] = match.slice(1).map(Number);
         if (![start, end, size].every(Number.isSafeInteger) ||
             start !== offset || end < start || size <= end ||
             (total !== null && total !== size)) {
-          throw new Error("Inconsistent media range; download stopped to avoid a corrupt file");
+          throw downloadError("errorRangeInconsistent");
         }
         expectedSize = end - start + 1;
         totalSize = size;
       } else {
-        if (offset !== 0) throw new Error("Server stopped supporting partial downloads");
+        if (offset !== 0) throw downloadError("errorRangeUnsupported");
         const length = res.headers.get("Content-Length");
         if (length !== null && !res.headers.has("Content-Encoding")) {
           if (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length))) {
-            throw new Error("Invalid Content-Length");
+            throw downloadError("errorLength");
           }
           expectedSize = Number(length);
           totalSize = expectedSize;
         }
       }
-      if (!res.body) throw new Error("Empty media response");
+      if (!res.body) throw downloadError("errorEmpty");
       reader = res.body.getReader();
       controller.signal.addEventListener("abort", () => {
         reader.cancel().catch(() => {});
@@ -149,7 +304,7 @@
         if (done) break;
         received += value.byteLength;
         if (expectedSize !== undefined && received > expectedSize) {
-          throw new Error("Media response exceeds the expected size");
+          throw downloadError("errorTooLarge");
         }
         // Wait for disk writes before reading more data, so slow disks do not
         // cause an unbounded queue of writes or large in-memory responses.
@@ -161,7 +316,7 @@
         options.onProgress?.(offset + received, totalSize ?? null);
       }
       if (!received || (expectedSize !== undefined && received !== expectedSize)) {
-        throw new Error("Incomplete media response; received byte count does not match");
+        throw downloadError("errorIncomplete");
       }
       return {
         blob: options.write ? null : new Blob(chunks, { type: mime }),
@@ -248,14 +403,14 @@
   const formatBytes = (bytes) => {
     const units = ["B", "KB", "MB", "GB", "TB"];
     const index = Math.min(Math.floor(Math.log(Math.max(bytes, 1)) / Math.log(1024)), units.length - 1);
-    return `${(bytes / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
+    return `${(index ? decimalFormat : integerFormat).format(bytes / (1024 ** index))} ${units[index]}`;
   };
   const updateTaskPanel = () => {
     const panel = document.getElementById("tel-downloader-progress-bar-container");
     if (!panel) return;
     panel.hidden = !panel.querySelector(".tel-task");
     panel.querySelector(".tel-panel-title").textContent = activeDownloads.size
-      ? `Downloads (${activeDownloads.size})` : "Downloads";
+      ? t("downloadsCount", { count: integerFormat.format(activeDownloads.size) }) : t("downloads");
   };
   const dismissTask = (task) => {
     document.getElementById("tel-downloader-progress-" + task.id)?.remove();
@@ -267,7 +422,7 @@
     const list = panel.querySelector(".tel-task-list");
     list.hidden = false;
     const toggle = panel.querySelector(".tel-panel-toggle");
-    toggle.textContent = "Hide";
+    toggle.textContent = t("hide");
     toggle.setAttribute("aria-expanded", "true");
     let card = document.getElementById("tel-downloader-progress-" + task.id);
     if (!card) {
@@ -276,11 +431,11 @@
       card.className = "tel-task";
       card.tabIndex = -1;
       card.innerHTML = `
-        <div class="tel-task-heading"><p class="filename"></p><button type="button" data-action="dismiss" aria-label="Dismiss download">&times;</button></div>
+        <div class="tel-task-heading"><p class="filename" dir="auto"></p><button type="button" data-action="dismiss">&times;</button></div>
         <span class="tel-task-state" role="status" aria-live="polite"></span>
-        <div class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div></div><p></p></div>
+        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div></div><p></p></div>
         <p class="tel-task-details"></p><p class="tel-task-error"></p>
-        <div class="tel-task-actions"><button type="button" data-action="cancel">Cancel</button><button type="button" data-action="retry" hidden>Retry</button></div>`;
+        <div class="tel-task-actions"><button type="button" data-action="cancel"></button><button type="button" data-action="retry" hidden></button></div>`;
       card.querySelector('[data-action="dismiss"]').onclick = () => dismissTask(task);
       card.querySelector('[data-action="cancel"]').onclick = () => {
         if (task.finished || task.state === "saving") return;
@@ -299,12 +454,7 @@
   const renderTask = (task) => {
     const card = document.getElementById("tel-downloader-progress-" + task.id);
     if (!card) return;
-    const labels = {
-      preparing: "Preparing", queued: "Queued", downloading: "Downloading",
-      saving: "Saving", completed: "Completed", handedOff: "Sent to browser",
-      failed: "Failed", cancelled: "Cancelled",
-    };
-    const label = labels[task.state];
+    const label = t(task.state);
     card.dataset.state = task.state;
     const title = card.querySelector(".filename");
     title.textContent = task.fileName;
@@ -312,24 +462,29 @@
     const state = card.querySelector(".tel-task-state");
     if (state.textContent !== label) state.textContent = label;
     const progress = card.querySelector(".progress");
+    progress.setAttribute("aria-label", t("progress"));
+    card.querySelector('[data-action="dismiss"]').setAttribute("aria-label", t("dismiss"));
     const percent = task.total ? Math.min(100, Math.floor(task.received * 100 / task.total)) : null;
     progress.classList.toggle("tel-indeterminate", task.state === "downloading" && percent === null);
     if (percent === null) progress.removeAttribute("aria-valuenow");
     else progress.setAttribute("aria-valuenow", percent);
     progress.setAttribute("aria-valuetext", label);
     progress.querySelector("div").style.width = (percent ?? 0) + "%";
-    progress.querySelector("p").textContent = task.state === "downloading" && percent !== null ? `${percent}%` : label;
+    progress.querySelector("p").textContent = task.state === "downloading" && percent !== null ? `${integerFormat.format(percent)}%` : label;
     const speed = task.received / Math.max((performance.now() - task.startedAt) / 1000, 0.1);
     card.querySelector(".tel-task-details").textContent =
       formatBytes(task.received) + (task.total !== null ? ` / ${formatBytes(task.total)}` : "") +
-      (task.state === "downloading" && task.received ? ` · ${formatBytes(speed)}/s` : "");
+      (task.state === "downloading" && task.received ? ` · ${t("rate", { speed: formatBytes(speed) })}` : "");
     const error = card.querySelector(".tel-task-error");
-    error.textContent = task.error || "";
+    error.textContent = formatDownloadError(task.error);
     error.hidden = !task.error;
     const cancel = card.querySelector('[data-action="cancel"]');
+    cancel.textContent = t("cancel");
     cancel.hidden = task.finished;
     cancel.disabled = task.state === "saving";
-    card.querySelector('[data-action="retry"]').hidden = !["failed", "cancelled"].includes(task.state);
+    const retry = card.querySelector('[data-action="retry"]');
+    retry.textContent = t("retry");
+    retry.hidden = !["failed", "cancelled"].includes(task.state);
     task.renderedAt = performance.now();
     task.renderedBytes = task.received;
     updateTaskPanel();
@@ -339,7 +494,7 @@
     task.finished = true;
     clearTimeout(task.progressTimer);
     task.state = state;
-    task.error = error?.message || (error ? String(error) : "");
+    task.error = error;
     if (activeDownloads.get(task.key) === task) activeDownloads.delete(task.key);
     if (error) logger.error(error, task.fileName);
     renderTask(task);
@@ -522,8 +677,7 @@
     button.className = className;
     button.innerHTML = iconHTML;
     button.type = "button";
-    button.title = "Download";
-    button.setAttribute("aria-label", "Download");
+    localizeDownloadButton(button);
     button.onclick = onClick;
     return button;
   };
@@ -600,7 +754,6 @@
         button.className = "btn-icon tgico-download _tel_download_button_pinned_container";
         button.innerHTML = createWebKDownloadIcon(true);
         button.type = "button";
-        button.setAttribute("aria-label", "Download");
         button.onclick = (event) => {
           event.stopPropagation();
           const media = getPinnedMedia();
@@ -612,8 +765,7 @@
       }
       const disabled = !getPinnedMedia();
       if (button.disabled !== disabled) button.disabled = disabled;
-      const title = disabled ? "Media is loading" : "Download";
-      if (button.title !== title) button.title = title;
+      localizeDownloadButton(button, disabled);
     }
 
     // Stories
@@ -624,8 +776,7 @@
         downloadButton.className = "btn-icon rp tel-download";
         downloadButton.innerHTML = `${createWebKDownloadIcon()}<div class="c-ripple"></div>`;
         downloadButton.setAttribute("type", "button");
-        downloadButton.setAttribute("title", "Download");
-        downloadButton.setAttribute("aria-label", "Download");
+        localizeDownloadButton(downloadButton);
         downloadButton.onclick = () => {
           // 1. Story with video
           const video = storiesContainer.querySelector("video.media-video");
@@ -707,8 +858,7 @@
           "btn-icon default__button tgico-download tel-download";
         downloadButton.innerHTML = createWebKDownloadIcon();
         downloadButton.setAttribute("type", "button");
-        downloadButton.setAttribute("title", "Download");
-        downloadButton.setAttribute("aria-label", "Download");
+        localizeDownloadButton(downloadButton);
         downloadButton.onclick = downloadCurrentWebKMedia;
         brControls?.prepend(downloadButton);
       }
@@ -722,8 +872,7 @@
       downloadButton.className = "btn-icon tgico-download tel-download";
       downloadButton.innerHTML = createWebKDownloadIcon(true);
       downloadButton.setAttribute("type", "button");
-      downloadButton.setAttribute("title", "Download");
-      downloadButton.setAttribute("aria-label", "Download");
+      localizeDownloadButton(downloadButton);
       downloadButton.onclick = downloadCurrentWebKMedia;
       mediaButtons.prepend(downloadButton);
     } else if (!hasDownloadButton) {
@@ -739,8 +888,7 @@
       downloadButton.className = "btn-icon tgico-download tel-download";
       downloadButton.innerHTML = createWebKDownloadIcon(true);
       downloadButton.setAttribute("type", "button");
-      downloadButton.setAttribute("title", "Download");
-      downloadButton.setAttribute("aria-label", "Download");
+      localizeDownloadButton(downloadButton);
       downloadButton.onclick = downloadCurrentWebKMedia;
       mediaButtons.prepend(downloadButton);
     }
@@ -749,14 +897,57 @@
   // The task panel is independent of Telegram's viewer and survives media changes.
   const panel = document.createElement("section");
   panel.id = "tel-downloader-progress-bar-container";
-  panel.setAttribute("aria-label", "Media downloads");
+  panel.dir = "ltr";
   panel.hidden = true;
-  panel.innerHTML = '<div class="tel-panel-heading"><strong class="tel-panel-title">Downloads</strong><button class="tel-panel-toggle" type="button" aria-expanded="true" aria-controls="tel-task-list">Hide</button></div><div id="tel-task-list" class="tel-task-list"></div>';
+  panel.innerHTML = '<div class="tel-panel-heading"><strong class="tel-panel-title"></strong><button class="tel-panel-toggle" type="button" aria-expanded="true" aria-controls="tel-task-list"></button></div><div class="tel-language-setting"><label for="tel-download-language"></label><select id="tel-download-language"></select></div><div id="tel-task-list" class="tel-task-list"></div>';
+  const languageSelect = panel.querySelector("select");
+  for (const [value, label] of [["auto", ""], ...Object.entries(UI_LANGUAGES)]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    if (value !== "auto") option.lang = value;
+    languageSelect.appendChild(option);
+  }
+  const refreshLanguage = () => {
+    uiLanguage = resolveLanguage();
+    integerFormat = new Intl.NumberFormat(uiLanguage, { maximumFractionDigits: 0 });
+    decimalFormat = new Intl.NumberFormat(uiLanguage, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    panel.lang = uiLanguage;
+    panel.setAttribute("aria-label", t("mediaDownloads"));
+    panel.querySelector("label").textContent = t("language");
+    languageSelect.querySelector('[value="auto"]').textContent = t("automatic");
+    languageSelect.value = languagePreference;
+    panel.querySelector(".tel-panel-toggle").textContent = t(panel.querySelector(".tel-task-list").hidden ? "show" : "hide");
+    for (const task of downloadTasks.values()) renderTask(task);
+    updateTaskPanel();
+    document.querySelectorAll("button.tel-download, button._tel_download_button_pinned_container").forEach(button => {
+      localizeDownloadButton(button, button.matches("._tel_download_button_pinned_container:disabled"));
+    });
+  };
+  languageSelect.onchange = () => {
+    languagePreference = Object.hasOwn(UI_LANGUAGES, languageSelect.value) ? languageSelect.value : "auto";
+    try {
+      if (languagePreference === "auto") localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+      else localStorage.setItem(LANGUAGE_STORAGE_KEY, languagePreference);
+    } catch {
+      // Storage can be disabled; the selected language still works for this tab.
+    }
+    refreshLanguage();
+  };
+  window.addEventListener("languagechange", () => {
+    if (languagePreference === "auto") refreshLanguage();
+  });
+  window.addEventListener("storage", event => {
+    if (event.key === LANGUAGE_STORAGE_KEY || event.key === null) {
+      languagePreference = readLanguagePreference();
+      refreshLanguage();
+    }
+  });
   panel.querySelector(".tel-panel-toggle").onclick = () => {
     const list = panel.querySelector(".tel-task-list");
     list.hidden = !list.hidden;
     const toggle = panel.querySelector(".tel-panel-toggle");
-    toggle.textContent = list.hidden ? "Show" : "Hide";
+    toggle.textContent = t(list.hidden ? "show" : "hide");
     toggle.setAttribute("aria-expanded", String(!list.hidden));
   };
   const style = document.createElement("style");
@@ -768,6 +959,7 @@
       width: min(340px, calc(100vw - 24px)); max-height: calc(100vh - 24px); z-index: 2147483646;
       background: var(--tel-bg); color: var(--tel-fg); border: 1px solid var(--tel-line); border-radius: 12px;
       box-shadow: 0 6px 28px #0003; font: 13px/1.4 system-ui, sans-serif; overflow: hidden;
+      display: flex; flex-direction: column; text-align: start;
     }
     html.night #tel-downloader-progress-bar-container, html.theme-dark #tel-downloader-progress-bar-container {
       --tel-bg: #202a35; --tel-fg: #f2f5f8; --tel-muted: #b0bdca; --tel-line: #455361;
@@ -779,8 +971,12 @@
     #tel-downloader-progress-bar-container .tel-panel-heading, #tel-downloader-progress-bar-container .tel-task-heading {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
-    #tel-downloader-progress-bar-container .tel-panel-heading { padding: 10px 12px; }
-    #tel-downloader-progress-bar-container .tel-task-list { overflow-y: auto; max-height: min(440px, calc(100vh - 88px)); overscroll-behavior: contain; }
+    #tel-downloader-progress-bar-container .tel-panel-heading { padding: 10px 12px; flex-shrink: 0; }
+    #tel-downloader-progress-bar-container .tel-panel-title { min-width: 0; overflow-wrap: anywhere; }
+    #tel-downloader-progress-bar-container .tel-language-setting { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; flex-shrink: 0; }
+    #tel-downloader-progress-bar-container .tel-language-setting label { flex: 1; min-width: 0; color: var(--tel-muted); overflow-wrap: anywhere; }
+    #tel-downloader-progress-bar-container select { width: 150px; max-width: 55%; min-width: 0; min-height: 32px; font: inherit; color: var(--tel-fg); background: var(--tel-bg); border: 1px solid var(--tel-line); border-radius: 6px; padding: 4px; }
+    #tel-downloader-progress-bar-container .tel-task-list { min-height: 0; overflow-y: auto; max-height: 440px; overscroll-behavior: contain; }
     #tel-downloader-progress-bar-container .tel-task { padding: 12px; border-top: 1px solid var(--tel-line); }
     #tel-downloader-progress-bar-container .filename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
     #tel-downloader-progress-bar-container button {
@@ -788,15 +984,15 @@
       font: inherit; border-radius: 6px; padding: 5px 8px; min-height: 32px; cursor: pointer; flex-shrink: 0;
     }
     #tel-downloader-progress-bar-container button:hover { background: var(--tel-track); }
-    #tel-downloader-progress-bar-container button:focus-visible, #tel-downloader-progress-bar-container .tel-task:focus-visible { outline: 2px solid var(--tel-accent); outline-offset: -2px; }
+    #tel-downloader-progress-bar-container button:focus-visible, #tel-downloader-progress-bar-container select:focus-visible, #tel-downloader-progress-bar-container .tel-task:focus-visible { outline: 2px solid var(--tel-accent); outline-offset: -2px; }
     #tel-downloader-progress-bar-container button:disabled { opacity: .5; cursor: default; }
     #tel-downloader-progress-bar-container [data-action="dismiss"] { color: var(--tel-muted); font-size: 20px; }
-    #tel-downloader-progress-bar-container .progress { position: relative; height: 24px; margin: 8px 0; background: var(--tel-track); border-radius: 6px; overflow: hidden; }
+    #tel-downloader-progress-bar-container .progress { position: relative; min-height: 24px; margin: 8px 0; background: var(--tel-track); border-radius: 6px; overflow: hidden; }
     #tel-downloader-progress-bar-container .progress > div { position: absolute; height: 100%; background: var(--tel-accent); opacity: .35; }
-    #tel-downloader-progress-bar-container .progress > p { position: relative; text-align: center; line-height: 24px; color: var(--tel-fg); }
-    #tel-downloader-progress-bar-container .tel-task-details { color: var(--tel-muted); font-variant-numeric: tabular-nums; }
+    #tel-downloader-progress-bar-container .progress > p { position: relative; text-align: center; line-height: 1.5; padding: 3px 8px; overflow-wrap: anywhere; color: var(--tel-fg); }
+    #tel-downloader-progress-bar-container .tel-task-details { color: var(--tel-muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     #tel-downloader-progress-bar-container .tel-task-error { color: var(--tel-error); margin-top: 8px; overflow-wrap: anywhere; }
-    #tel-downloader-progress-bar-container .tel-task-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
+    #tel-downloader-progress-bar-container .tel-task-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-top: 4px; }
     #tel-downloader-progress-bar-container .tel-task-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     #tel-downloader-progress-bar-container [data-state="failed"] .progress > div { background: var(--tel-error); }
     #tel-downloader-progress-bar-container .tel-indeterminate > div { width: 35% !important; animation: tel-download-progress 1.4s infinite ease-in-out; }
@@ -805,6 +1001,7 @@
   `;
   document.head.appendChild(style);
   document.body.appendChild(panel);
+  refreshLanguage();
 
   const isWebK = location.hostname === "webk.telegram.org" || location.pathname.startsWith("/k/");
   const isWebA = location.hostname === "webz.telegram.org" || location.pathname.startsWith("/a/");

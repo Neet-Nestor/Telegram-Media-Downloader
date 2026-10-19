@@ -83,6 +83,12 @@ The task panel shows the filename, received size, and download speed. When the t
 
 Keep the Telegram tab open until the transfer finishes. Browsers without direct file saving collect the downloaded data before handing it to the download manager, so large downloads can use substantial browser resources. Errors are also available in the [DevTools console](https://developer.chrome.com/docs/devtools/open/).
 
+### Interface Language
+
+The download UI supports English, Simplified Chinese, Traditional Chinese, Russian, and Burmese. It uses the first supported language in your browser's language preferences, falling back to English. Chinese script and regional variants are recognized, including Traditional Chinese for Taiwan, Hong Kong, and Macau.
+
+Use **Interface language** in the download panel to choose a language or return to **Browser language**. Changes apply immediately to existing tasks, errors, and the script's download buttons without interrupting downloads. The preference is saved on the current Telegram web origin and shared across its tabs; if browser storage is blocked, it lasts for the current page only. Browser-provided dialogs and technical error details keep their original language.
+
 ## Contributing
 
 We welcome contributions from the community! If you’d like to contribute to Telegram Media Downloader, follow these steps:
@@ -157,6 +163,8 @@ GitHub Actions runs these checks on every push and pull request. Browser fixture
 
 ### Help with Translations
 We want Telegram Media Downloader to be accessible to users worldwide! If you’d like to help translate the script’s Greasy Fork page, follow these steps:
+
+For the download UI, add the language's native name to `UI_LANGUAGES` and its messages to `UI_MESSAGES` in [`src/tel_download.js`](src/tel_download.js). Keep every English message key and its `{placeholders}`; add regional or script matching to `matchLanguage` if needed. Keep translations as plain text. Run `npm test` to check message coverage, placeholders, language switching, and download regressions. Missing messages fall back to English.
 
 #### How to Contribute a Translation
 

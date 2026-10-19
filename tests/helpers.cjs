@@ -4,15 +4,18 @@ const { chromium } = require('playwright-core');
 
 const source = fs.readFileSync(path.join(__dirname, '../src/tel_download.js'), 'utf8')
   .replace('logger.info("Completed script setup.");',
-    'window.downloads = { video: tel_download_video, audio: tel_download_audio, image: tel_download_image };');
+    'window.downloads = { video: tel_download_video, audio: tel_download_audio, image: tel_download_image }; window.downloadI18n = { messages: UI_MESSAGES, languages: UI_LANGUAGES, translate };');
 
 exports.launch = () => chromium.launch({
   headless: true,
   ...(process.env.TEL_TEST_BROWSER ? { executablePath: process.env.TEL_TEST_BROWSER } : {}),
 });
 
-exports.openPage = async (browser, html = '', pathname = '/k/') => {
-  const page = await browser.newPage();
+exports.installScript = page => page.addScriptTag({ content: source });
+
+exports.openPage = async (browser, html = '', pathname = '/k/', options = {}) => {
+  const page = options.context ? await options.context.newPage()
+    : await browser.newPage({ locale: options.locale || 'en-US' });
   await page.route('**/*', route => route.request().isNavigationRequest()
     ? route.fulfill({ contentType: 'text/html', body: html })
     : route.abort());
@@ -51,7 +54,8 @@ exports.openPage = async (browser, html = '', pathname = '/k/') => {
     };
     window.settle = () => new Promise(resolve => setTimeout(resolve, 50));
   });
-  await page.addScriptTag({ content: source });
+  if (options.beforeScript) await page.evaluate(options.beforeScript);
+  await exports.installScript(page);
   return page;
 };
 
