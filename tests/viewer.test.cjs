@@ -35,3 +35,29 @@ test('WebK toolbar follows an image-to-video transition', async () => {
   assert.equal(result.url, 'https://test.invalid/second.mp4');
   assert.deepEqual(result.errors, []);
 });
+
+test('pinned audio recovers when its new source loads later', async () => {
+  page = await openPage(browser, '<div class="pinned-audio" data-mid="1"><div class="pinned-container-wrapper-utils"></div></div><div class="bubble"><audio-element data-mid="1"></audio-element></div>');
+  const result = await page.evaluate(async () => {
+    const element = document.querySelector('audio-element');
+    element.audio = document.createElement('audio');
+    element.audio.src = 'https://test.invalid/first.ogg';
+    refresh();
+    document.querySelector('.pinned-audio').setAttribute('data-mid', '2');
+    element.setAttribute('data-mid', '2');
+    element.audio.removeAttribute('src');
+    refresh();
+    const button = document.querySelector('._tel_download_button_pinned_container');
+    const loadingDisabled = button.disabled;
+    element.audio.src = 'https://test.invalid/second.ogg';
+    refresh();
+    fetch = async url => { requests.push(url); return response('audio/ogg', 'bytes 0-2/3'); };
+    button.click();
+    await settle();
+    return { loadingDisabled, readyDisabled: button.disabled, requests, errors };
+  });
+  assert.equal(result.loadingDisabled, true);
+  assert.equal(result.readyDisabled, false);
+  assert.deepEqual(result.requests, ['https://test.invalid/second.ogg']);
+  assert.deepEqual(result.errors, []);
+});

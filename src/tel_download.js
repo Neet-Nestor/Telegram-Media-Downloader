@@ -473,6 +473,21 @@
   const getMediaSource = (media) =>
     media?.currentSrc || media?.src || media?.querySelector("source")?.src;
 
+  const getPinnedMedia = () => {
+    const pinned = document.querySelector(".pinned-audio");
+    const mid = pinned?.getAttribute("data-mid");
+    if (!mid) return null;
+    const peer = pinned.getAttribute("data-peer-id");
+    const candidates = Array.from(document.querySelectorAll("audio-element")).filter(
+      (element) => element.closest(".bubble") && element.getAttribute("data-mid") === mid &&
+        (!peer || element.closest("[data-peer-id]")?.getAttribute("data-peer-id") === peer)
+    );
+    const element = candidates.length === 1 ? candidates[0] :
+      candidates.find((candidate) => candidate.audio && !candidate.audio.paused);
+    const url = getMediaSource(element?.audio);
+    return url ? { url, kind: element.audio.tagName === "AUDIO" ? "audio" : "video" } : null;
+  };
+
   const downloadCurrentWebKMedia = () => {
     // The toolbar can outlive its media node. Resolve both at click time.
     const viewer = document.querySelector(".media-viewer-whole");
@@ -654,53 +669,30 @@
   setInterval(() => {
     refreshWebKDownloadIcon();
 
-    /* Voice Message or Circle Video */
-    const pinnedAudio = document.body.querySelector(".pinned-audio");
-    let dataMid;
-    let downloadButtonPinnedAudio =
-      document.body.querySelector("._tel_download_button_pinned_container") ||
-      document.createElement("button");
-    if (pinnedAudio) {
-      dataMid = pinnedAudio.getAttribute("data-mid");
-      downloadButtonPinnedAudio.className =
-        "btn-icon tgico-download _tel_download_button_pinned_container";
-      downloadButtonPinnedAudio.innerHTML = createWebKDownloadIcon(true);
-      downloadButtonPinnedAudio.setAttribute("type", "button");
-      downloadButtonPinnedAudio.setAttribute("title", "Download");
-      downloadButtonPinnedAudio.setAttribute("aria-label", "Download");
-    }
-    const audioElements = document.body.querySelectorAll("audio-element");
-    audioElements.forEach((audioElement) => {
-      const bubble = audioElement.closest(".bubble");
-      if (
-        !bubble ||
-        bubble.querySelector("._tel_download_button_pinned_container")
-      ) {
-        return; /* Skip if there's already a download button */
-      }
-      if (
-        dataMid &&
-        downloadButtonPinnedAudio.getAttribute("data-mid") !== dataMid &&
-        audioElement.getAttribute("data-mid") === dataMid
-      ) {
-        downloadButtonPinnedAudio.onclick = (e) => {
-          e.stopPropagation();
-          if (isAudio) {
-              tel_download_audio(link);
-          } else {
-              tel_download_video(link);
-          }
+    // Resolve the pinned media again on every click: its source may load after
+    // the pinned message changes, and message IDs can repeat across chats.
+    const pinnedAudio = document.querySelector(".pinned-audio");
+    const pinnedUtils = pinnedAudio?.querySelector(".pinned-container-wrapper-utils");
+    if (pinnedUtils) {
+      let button = pinnedUtils.querySelector("._tel_download_button_pinned_container");
+      if (!button) {
+        button = document.createElement("button");
+        button.className = "btn-icon tgico-download _tel_download_button_pinned_container";
+        button.innerHTML = createWebKDownloadIcon(true);
+        button.type = "button";
+        button.setAttribute("aria-label", "Download");
+        button.onclick = (event) => {
+          event.stopPropagation();
+          const media = getPinnedMedia();
+          if (!media) return;
+          if (media.kind === "audio") tel_download_audio(media.url);
+          else tel_download_video(media.url);
         };
-        downloadButtonPinnedAudio.setAttribute("data-mid", dataMid);
-        const link = audioElement.audio && audioElement.audio.getAttribute("src");
-        const isAudio = audioElement.audio && audioElement.audio instanceof HTMLAudioElement
-        if (link) {
-          pinnedAudio
-            .querySelector(".pinned-container-wrapper-utils")
-            .appendChild(downloadButtonPinnedAudio);
-        }
+        pinnedUtils.appendChild(button);
       }
-    });
+      button.disabled = !getPinnedMedia();
+      button.title = button.disabled ? "Media is loading" : "Download";
+    }
 
     // Stories
     const storiesContainer = document.getElementById("stories-viewer");
