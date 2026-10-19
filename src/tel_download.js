@@ -4,7 +4,7 @@
 // @name:zh-CN   Telegram 受限图片视频下载器
 // @name:zh-TW   Telegram 受限圖片影片下載器
 // @name:ru      Telegram: загрузчик медиафайлов
-// @version      1.212
+// @version      1.213
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
 // @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
 // @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
@@ -34,10 +34,40 @@
       );
     },
   };
-  // Unicode values for icons (used in /k/ app)
-  // https://github.com/morethanwords/tweb/blob/master/src/icons.ts
-  const DOWNLOAD_ICON = "\ue979";
-  const FORWARD_ICON = "\ue99a";
+  // WebK's icon font code points change between releases. Only learn the
+  // download glyph from native buttons in this page, never from our own buttons.
+  const WEB_K_DOWNLOAD_BUTTON_SELECTOR = [
+    "button.quality-download-options-button-menu",
+    "button.tgico-download",
+    'button[aria-label="Download"]',
+    'button[title="Download"]',
+  ].join(", ");
+  const getWebKDownloadButtons = (container) =>
+    Array.from(container.querySelectorAll(WEB_K_DOWNLOAD_BUTTON_SELECTOR)).filter(
+      (button) =>
+        !button.matches(".tel-download, ._tel_download_button_pinned_container")
+    );
+  let webKDownloadGlyph = "";
+  const createWebKDownloadIcon = (buttonIcon = false) =>
+    `<span class="tgico tel-download-icon${buttonIcon ? " button-icon" : ""}" aria-hidden="true">${
+      webKDownloadGlyph ||
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle" aria-hidden="true" focusable="false"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>'
+    }</span>`;
+  const refreshWebKDownloadIcon = () => {
+    for (const button of getWebKDownloadButtons(document)) {
+      const glyph = button.querySelector(":scope > .tgico")?.textContent.trim();
+      // Ignore labels or menu contents; the icon must be one private-use glyph.
+      if (!glyph || !/^[\uE000-\uF8FF]$/.test(glyph)) continue;
+      if (glyph !== webKDownloadGlyph) {
+        // Keep this in memory only: a new page load may use a different font.
+        webKDownloadGlyph = glyph;
+        document.querySelectorAll(".tel-download-icon").forEach((icon) => {
+          icon.textContent = glyph;
+        });
+      }
+      return;
+    }
+  };
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
   const hashCode = (s) => {
@@ -637,6 +667,8 @@
 
   // For webk /k/ webapp
   setInterval(() => {
+    refreshWebKDownloadIcon();
+
     /* Voice Message or Circle Video */
     const pinnedAudio = document.body.querySelector(".pinned-audio");
     let dataMid;
@@ -647,7 +679,10 @@
       dataMid = pinnedAudio.getAttribute("data-mid");
       downloadButtonPinnedAudio.className =
         "btn-icon tgico-download _tel_download_button_pinned_container";
-      downloadButtonPinnedAudio.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
+      downloadButtonPinnedAudio.innerHTML = createWebKDownloadIcon(true);
+      downloadButtonPinnedAudio.setAttribute("type", "button");
+      downloadButtonPinnedAudio.setAttribute("title", "Download");
+      downloadButtonPinnedAudio.setAttribute("aria-label", "Download");
     }
     const audioElements = document.body.querySelectorAll("audio-element");
     audioElements.forEach((audioElement) => {
@@ -688,7 +723,7 @@
       const createDownloadButton = () => {
         const downloadButton = document.createElement("button");
         downloadButton.className = "btn-icon rp tel-download";
-        downloadButton.innerHTML = `<span class="tgico">${DOWNLOAD_ICON}</span><div class="c-ripple"></div>`;
+        downloadButton.innerHTML = `${createWebKDownloadIcon()}<div class="c-ripple"></div>`;
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -739,21 +774,31 @@
 
     // Query hidden buttons and unhide them
     const hiddenButtons = mediaButtons.querySelectorAll("button.btn-icon.hide");
-    let onDownload = null;
     for (const btn of hiddenButtons) {
       btn.classList.remove("hide");
-      if (btn.textContent === FORWARD_ICON) {
-        btn.classList.add("tgico-forward");
-      }
-      if (btn.textContent === DOWNLOAD_ICON) {
-        btn.classList.add("tgico-download");
-        // Use official download buttons
-        onDownload = () => {
-          btn.click();
-        };
-        logger.info("onDownload", onDownload);
-      }
     }
+
+    // Recognize native downloads by their purpose, not their font code point.
+    const nativeDownloadButtons = getWebKDownloadButtons(mediaButtons);
+    const nativeDirectDownload = nativeDownloadButtons.find(
+      (button) =>
+        !button.disabled &&
+        !button.matches(
+          '.quality-download-options-button-menu, .btn-menu-toggle, [aria-haspopup="menu"], [aria-haspopup="true"]'
+        )
+    );
+    // A quality menu supplies an icon, but clicking it only opens a menu.
+    const onDownload = nativeDirectDownload
+      ? () => nativeDirectDownload.click()
+      : null;
+    if (nativeDownloadButtons.length > 0) {
+      mediaButtons.querySelectorAll("button.tel-download").forEach((button) => {
+        button.remove();
+      });
+    }
+    const hasDownloadButton =
+      nativeDownloadButtons.length > 0 ||
+      mediaButtons.querySelector("button.tel-download");
 
     if (mediaAspecter.querySelector(".ckin__player")) {
       // 1. Video player detected - Video and it has finished initial loading
@@ -770,7 +815,7 @@
         const downloadButton = document.createElement("button");
         downloadButton.className =
           "btn-icon default__button tgico-download tel-download";
-        downloadButton.innerHTML = `<span class="tgico">${DOWNLOAD_ICON}</span>`;
+        downloadButton.innerHTML = createWebKDownloadIcon();
         downloadButton.setAttribute("type", "button");
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
@@ -785,14 +830,13 @@
       }
     } else if (
       mediaAspecter.querySelector("video") &&
-      mediaAspecter.querySelector("video") &&
-      !mediaButtons.querySelector("button.btn-icon.tgico-download")
+      !hasDownloadButton
     ) {
       // 2. Video HTML element detected, could be either GIF or unloaded video
       // container > video[src]
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
-      downloadButton.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
+      downloadButton.innerHTML = createWebKDownloadIcon(true);
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
@@ -804,7 +848,7 @@
         };
       }
       mediaButtons.prepend(downloadButton);
-    } else if (!mediaButtons.querySelector("button.btn-icon.tgico-download")) {
+    } else if (!hasDownloadButton) {
       // 3. Image without download button detected
       // container > img.thumbnail
       if (
@@ -815,7 +859,7 @@
       }
       const downloadButton = document.createElement("button");
       downloadButton.className = "btn-icon tgico-download tel-download";
-      downloadButton.innerHTML = `<span class="tgico button-icon">${DOWNLOAD_ICON}</span>`;
+      downloadButton.innerHTML = createWebKDownloadIcon(true);
       downloadButton.setAttribute("type", "button");
       downloadButton.setAttribute("title", "Download");
       downloadButton.setAttribute("aria-label", "Download");
