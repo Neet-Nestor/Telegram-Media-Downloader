@@ -78,7 +78,7 @@
     }
   };
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
-  const REFRESH_DELAY = 500;
+  const REFRESH_DELAY = 2000;
   const DOWNLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
   const fetchMediaPart = async (url, offset, total, kind) => {
     const res = await fetch(url, {
@@ -332,7 +332,8 @@
   const tel_download_image = (url) => downloadMedia(url, "image");
 
   const getMediaSource = (media) =>
-    media?.currentSrc || media?.src || media?.querySelector("source")?.src;
+    media?.getAttribute("src") ? media.src :
+      media?.currentSrc || media?.querySelector("source")?.src;
 
   const getPinnedMedia = () => {
     const pinned = document.querySelector(".pinned-audio");
@@ -372,162 +373,76 @@
 
   logger.info("Initialized");
 
-  // For webz /a/ webapp
-  setInterval(() => {
-    // Stories
-    const storiesContainer = document.getElementById("StoryViewer");
-    if (storiesContainer) {
-      console.log("storiesContainer");
-      const createDownloadButton = () => {
-        console.log("createDownloadButton");
-        const downloadIcon = document.createElement("i");
-        downloadIcon.className = "icon icon-download";
-        const downloadButton = document.createElement("button");
-        downloadButton.className =
-          "Button TkphaPyQ tiny translucent-white round tel-download";
-        downloadButton.appendChild(downloadIcon);
-        downloadButton.setAttribute("type", "button");
-        downloadButton.setAttribute("title", "Download");
-        downloadButton.setAttribute("aria-label", "Download");
-        downloadButton.onclick = () => {
-          // 1. Story with video
-          const video = storiesContainer.querySelector("video");
-          const videoSrc =
-            video?.src ||
-            video?.currentSrc ||
-            video?.querySelector("source")?.src;
-          if (videoSrc) {
-            tel_download_video(videoSrc);
-          } else {
-            // 2. Story with image
-            const images = storiesContainer.querySelectorAll("img.PVZ8TOWS");
-            if (images.length > 0) {
-              const imageSrc = images[images.length - 1]?.src;
-              if (imageSrc) tel_download_image(imageSrc);
-            }
+  const createDownloadButton = (className, iconHTML, onClick) => {
+    const button = document.createElement("button");
+    button.className = className;
+    button.innerHTML = iconHTML;
+    button.type = "button";
+    button.title = "Download";
+    button.setAttribute("aria-label", "Download");
+    button.onclick = onClick;
+    return button;
+  };
+  const getWebADownloadButtons = (container) =>
+    Array.from(container.querySelectorAll("button")).filter((button) =>
+      !button.classList.contains("tel-download") &&
+      (button.querySelector(".icon-download") || button.title === "Download" ||
+        button.getAttribute("aria-label") === "Download") && isUsableDownloadButton(button)
+    );
+  const downloadCurrentWebAMedia = () => {
+    const media = document.querySelector("#MediaViewer .MediaViewerSlide--active");
+    const videoUrl = getMediaSource(media?.querySelector(".VideoPlayer video"));
+    const imageUrl = getMediaSource(media?.querySelector(".MediaViewerContent > div > img"));
+    if (videoUrl) tel_download_video(videoUrl);
+    else if (imageUrl) tel_download_image(imageUrl);
+  };
+
+  // WebA owns only media discovery and button placement.
+  const refreshWebA = () => {
+    const story = document.getElementById("StoryViewer");
+    if (story) {
+      const header = story.querySelector(".GrsJNw3y") || story.querySelector(".DropdownMenu")?.parentNode;
+      if (header && !header.querySelector(".tel-download") && !getWebADownloadButtons(header).length) {
+        header.prepend(createDownloadButton(
+          "Button TkphaPyQ tiny translucent-white round tel-download",
+          '<i class="icon icon-download" aria-hidden="true"></i>',
+          () => {
+            const current = document.getElementById("StoryViewer");
+            const videoUrl = getMediaSource(current?.querySelector("video"));
+            const images = current?.querySelectorAll("img.PVZ8TOWS");
+            const imageUrl = getMediaSource(images?.[images.length - 1]);
+            if (videoUrl) tel_download_video(videoUrl);
+            else if (imageUrl) tel_download_image(imageUrl);
           }
-        };
-        return downloadButton;
-      };
-
-      const storyHeader =
-        storiesContainer.querySelector(".GrsJNw3y") ||
-        storiesContainer.querySelector(".DropdownMenu").parentNode;
-      if (storyHeader && !storyHeader.querySelector(".tel-download")) {
-        console.log("storyHeader");
-        storyHeader.insertBefore(
-          createDownloadButton(),
-          storyHeader.querySelector("button")
-        );
+        ));
       }
     }
-
-    // All media opened are located in .media-viewer-movers > .media-viewer-aspecter
-    const mediaContainer = document.querySelector(
-      "#MediaViewer .MediaViewerSlide--active"
+    const media = document.querySelector("#MediaViewer .MediaViewerSlide--active");
+    const actions = document.querySelector("#MediaViewer .MediaViewerActions");
+    if (!media || !actions) return;
+    const video = media.querySelector(".VideoPlayer video");
+    const image = media.querySelector(".MediaViewerContent > div > img");
+    if (!getMediaSource(video) && !getMediaSource(image)) return;
+    const makeButton = () => createDownloadButton(
+      "Button smaller translucent-white round tel-download",
+      '<i class="icon icon-download" aria-hidden="true"></i>',
+      downloadCurrentWebAMedia
     );
-    const mediaViewerActions = document.querySelector(
-      "#MediaViewer .MediaViewerActions"
-    );
-    if (!mediaContainer || !mediaViewerActions) return;
-
-    // Videos in channels
-    const videoPlayer = mediaContainer.querySelector(
-      ".MediaViewerContent > .VideoPlayer"
-    );
-    const img = mediaContainer.querySelector(".MediaViewerContent > div > img");
-    // 1. Video player detected - Video or GIF
-    // container > .MediaViewerSlides > .MediaViewerSlide > .MediaViewerContent > .VideoPlayer > video[src]
-    const downloadIcon = document.createElement("i");
-    downloadIcon.className = "icon icon-download";
-    const downloadButton = document.createElement("button");
-    downloadButton.className =
-      "Button smaller translucent-white round tel-download";
-    downloadButton.setAttribute("type", "button");
-    downloadButton.setAttribute("title", "Download");
-    downloadButton.setAttribute("aria-label", "Download");
-    if (videoPlayer) {
-      const videoUrl = videoPlayer.querySelector("video").currentSrc;
-      downloadButton.setAttribute("data-tel-download-url", videoUrl);
-      downloadButton.appendChild(downloadIcon);
-      downloadButton.onclick = () => {
-        tel_download_video(videoPlayer.querySelector("video").currentSrc);
-      };
-
-      // Add download button to video controls
-      const controls = videoPlayer.querySelector(".VideoPlayerControls");
-      if (controls) {
-        const buttons = controls.querySelector(".buttons");
-        if (!buttons.querySelector("button.tel-download")) {
-          const spacer = buttons.querySelector(".spacer");
-          spacer.after(downloadButton);
-        }
-      }
-
-      // Add/Update/Remove download button to topbar
-      if (mediaViewerActions.querySelector("button.tel-download")) {
-        const telDownloadButton = mediaViewerActions.querySelector(
-          "button.tel-download"
-        );
-        if (
-          mediaViewerActions.querySelectorAll('button[title="Download"]')
-            .length > 1
-        ) {
-          // There's existing download button, remove ours
-          mediaViewerActions.querySelector("button.tel-download").remove();
-        } else if (
-          telDownloadButton.getAttribute("data-tel-download-url") !== videoUrl
-        ) {
-          // Update existing button
-          telDownloadButton.onclick = () => {
-            tel_download_video(videoPlayer.querySelector("video").currentSrc);
-          };
-          telDownloadButton.setAttribute("data-tel-download-url", videoUrl);
-        }
-      } else if (
-        !mediaViewerActions.querySelector('button[title="Download"]')
-      ) {
-        // Add the button if there's no download button at all
-        mediaViewerActions.prepend(downloadButton);
-      }
-    } else if (img && img.src) {
-      downloadButton.setAttribute("data-tel-download-url", img.src);
-      downloadButton.appendChild(downloadIcon);
-      downloadButton.onclick = () => {
-        tel_download_image(img.src);
-      };
-
-      // Add/Update/Remove download button to topbar
-      if (mediaViewerActions.querySelector("button.tel-download")) {
-        const telDownloadButton = mediaViewerActions.querySelector(
-          "button.tel-download"
-        );
-        if (
-          mediaViewerActions.querySelectorAll('button[title="Download"]')
-            .length > 1
-        ) {
-          // There's existing download button, remove ours
-          mediaViewerActions.querySelector("button.tel-download").remove();
-        } else if (
-          telDownloadButton.getAttribute("data-tel-download-url") !== img.src
-        ) {
-          // Update existing button
-          telDownloadButton.onclick = () => {
-            tel_download_image(img.src);
-          };
-          telDownloadButton.setAttribute("data-tel-download-url", img.src);
-        }
-      } else if (
-        !mediaViewerActions.querySelector('button[title="Download"]')
-      ) {
-        // Add the button if there's no download button at all
-        mediaViewerActions.prepend(downloadButton);
-      }
+    if (getWebADownloadButtons(actions).length) {
+      actions.querySelectorAll("button.tel-download").forEach((button) => button.remove());
+    } else if (!actions.querySelector("button.tel-download")) {
+      actions.prepend(makeButton());
     }
-  }, REFRESH_DELAY);
+    const controls = media.querySelector(".VideoPlayerControls .buttons");
+    if (video && controls && !controls.querySelector("button.tel-download")) {
+      const spacer = controls.querySelector(".spacer");
+      if (spacer) spacer.after(makeButton());
+      else controls.appendChild(makeButton());
+    }
+  };
 
-  // For webk /k/ webapp
-  setInterval(() => {
+  // WebK owns only media discovery and button placement.
+  const refreshWebK = () => {
     refreshWebKDownloadIcon();
 
     // Resolve the pinned media again on every click: its source may load after
@@ -551,8 +466,10 @@
         };
         pinnedUtils.appendChild(button);
       }
-      button.disabled = !getPinnedMedia();
-      button.title = button.disabled ? "Media is loading" : "Download";
+      const disabled = !getPinnedMedia();
+      if (button.disabled !== disabled) button.disabled = disabled;
+      const title = disabled ? "Media is loading" : "Download";
+      if (button.title !== title) button.title = title;
     }
 
     // Stories
@@ -585,14 +502,14 @@
       };
 
       const storyHeader = storiesContainer.querySelector(
-        "[class^='_ViewerStoryHeaderRight']"
+        "[class*='_ViewerStoryHeaderRight']"
       );
       if (storyHeader && !storyHeader.querySelector(".tel-download")) {
         storyHeader.prepend(createDownloadButton());
       }
 
       const storyFooter = storiesContainer.querySelector(
-        "[class^='_ViewerStoryFooterRight']"
+        "[class*='_ViewerStoryFooterRight']"
       );
       if (storyFooter && !storyFooter.querySelector(".tel-download")) {
         storyFooter.prepend(createDownloadButton());
@@ -649,7 +566,7 @@
         downloadButton.setAttribute("title", "Download");
         downloadButton.setAttribute("aria-label", "Download");
         downloadButton.onclick = downloadCurrentWebKMedia;
-        brControls.prepend(downloadButton);
+        brControls?.prepend(downloadButton);
       }
     } else if (
       mediaAspecter.querySelector("video") &&
@@ -683,7 +600,7 @@
       downloadButton.onclick = downloadCurrentWebKMedia;
       mediaButtons.prepend(downloadButton);
     }
-  }, REFRESH_DELAY);
+  };
 
   // Progress bar container setup
   (function setupProgressBar() {
@@ -700,6 +617,40 @@
     }
     body.appendChild(container);
   })();
+
+  const isWebK = location.hostname === "webk.telegram.org" || location.pathname.startsWith("/k/");
+  const isWebA = location.hostname === "webz.telegram.org" || location.pathname.startsWith("/a/");
+  const refreshApp = isWebK ? refreshWebK : isWebA ? refreshWebA : null;
+  if (refreshApp) {
+    const roots = isWebK
+      ? ".media-viewer-whole, #stories-viewer, .pinned-audio, audio-element"
+      : "#MediaViewer, #StoryViewer";
+    let pending;
+    const scheduleRefresh = () => {
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        refreshApp();
+      }, 100);
+    };
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement;
+        if (target?.closest("#tel-downloader-progress-bar-container, .tel-download, ._tel_download_button_pinned_container")) return false;
+        return target?.closest(roots) || Array.from(record.addedNodes).some((node) =>
+          node instanceof Element && (node.matches(roots) || node.querySelector(roots))
+        );
+      })) scheduleRefresh();
+    });
+    observer.observe(document.body, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ["class", "src", "data-mid", "data-peer-id", "disabled", "aria-disabled", "hidden"],
+    });
+    // A fallback handles media source properties changed outside the DOM.
+    setInterval(() => { if (!document.hidden) refreshApp(); }, REFRESH_DELAY);
+    document.addEventListener("visibilitychange", scheduleRefresh);
+    refreshApp();
+  }
 
   logger.info("Completed script setup.");
 })();

@@ -111,3 +111,30 @@ test('restoring downloads does not expose unrelated hidden actions', async () =>
   });
   assert.deepEqual(result, { deleteHidden: true, downloadHidden: false });
 });
+
+test('WebA renders separate toolbar and player buttons and follows media changes', async () => {
+  page = await openPage(browser, '<div id="MediaViewer"><div class="MediaViewerActions"></div><div class="MediaViewerSlide--active"><div class="MediaViewerContent"><div class="VideoPlayer"><video src="https://test.invalid/first.mp4"></video><div class="VideoPlayerControls"><div class="buttons"><div class="spacer"></div></div></div></div></div></div></div>', '/a/');
+  const result = await page.evaluate(async () => {
+    refresh();
+    const count = document.querySelectorAll('#MediaViewer .tel-download').length;
+    document.querySelector('video').src = 'https://test.invalid/second.mp4';
+    document.querySelector('.MediaViewerActions .tel-download').click();
+    await settle();
+    return { count, timers: ticks.length, url: requests[0]?.url, errors };
+  });
+  assert.deepEqual(result, { count: 2, timers: 1, url: 'https://test.invalid/second.mp4', errors: [] });
+});
+
+test('partially mounted story and player controls do not throw', async () => {
+  page = await openPage(browser, '<div id="StoryViewer"></div><div id="MediaViewer"><div class="MediaViewerActions"></div><div class="MediaViewerSlide--active"><div class="MediaViewerContent"><div class="VideoPlayer"><div class="VideoPlayerControls"></div></div></div></div></div>', '/a/');
+  const result = await page.evaluate(() => { refresh(); return errors; });
+  assert.deepEqual(result, []);
+});
+
+test('media mounted later is detected without polling', async () => {
+  page = await openPage(browser);
+  await page.evaluate(html => { document.body.insertAdjacentHTML('beforeend', html); }, media('<img class="thumbnail" src="https://test.invalid/photo.jpg">'));
+  await page.waitForSelector('.media-viewer-buttons .tel-download');
+  assert.equal(await page.locator('.media-viewer-buttons .tel-download').count(), 1);
+  assert.equal(await page.evaluate(() => ticks.length), 1);
+});
