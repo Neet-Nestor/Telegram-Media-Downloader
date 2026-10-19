@@ -282,208 +282,54 @@
     progressBar.querySelector("div").style.width = "100%";
   };
 
-  const tel_download_video = (url) => {
-    let _blobs = [];
-    let _next_offset = 0;
-    let _total_size = null;
-    let mimeType = "video/mp4";
-
-    const videoId =
-      (Math.random() + 1).toString(36).substring(2, 10) +
-      "_" +
-      Date.now().toString();
-    let fileName = getDownloadFileName(url, getMediaMetadata(url)?.mimeType, "video");
-
-    const fetchNextPart = (_writable) => {
-      return fetchMediaPart(url, _next_offset, _total_size, "video")
-        .then(({ blob, mime, totalSize, nextOffset }) => {
-          mimeType = mime;
-          fileName = getDownloadFileName(url, mime, "video");
-          _next_offset = nextOffset;
-          _total_size = totalSize;
-          updateProgress(videoId, fileName, ((_next_offset * 100) / _total_size).toFixed(0));
-          return blob;
-        })
-        .then((resBlob) => {
-          if (_writable !== null) {
-            return _writable.write(resBlob);
-          } else {
-            _blobs.push(resBlob);
-          }
-        })
-        .then(async () => {
-          if (!_total_size) {
-            throw new Error("_total_size is NULL");
-          }
-
-          if (_next_offset < _total_size) {
-            return fetchNextPart(_writable);
-          } else {
-            if (_writable !== null) {
-              await _writable.close();
-              logger.info("Download finished", fileName);
-            } else {
-              save();
-            }
-            completeProgress(videoId);
-          }
-        })
-        .catch(async (reason) => {
-          if (_writable) {
-            try {
-              await _writable.abort();
-            } catch {
-              // The stream may already be errored or closed.
-            }
-          }
-          logger.error(reason, fileName);
-          AbortProgress(videoId);
-        });
-    };
-
-    const save = () => {
-      saveMediaBlob(new Blob(_blobs, { type: mimeType }), fileName);
-    };
-
-    const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
-      (() => {
-        try {
-          return unsafeWindow.self === unsafeWindow.top;
-        } catch {
-          return false;
-        }
-      })();
-    if (supportsFileSystemAccess) {
-      unsafeWindow
-        .showSaveFilePicker({
-          suggestedName: fileName,
-        })
-        .then((handle) => {
-          handle
-            .createWritable()
-            .then((writable) => {
-              createProgressBar(videoId, fileName);
-              return fetchNextPart(writable);
-            })
-            .catch((err) => {
-              console.error(err.name, err.message);
-            });
-        })
-        .catch((err) => {
-          if (err.name !== "AbortError") {
-            console.error(err.name, err.message);
-          }
-        });
-    } else {
-      createProgressBar(videoId, fileName);
-      return fetchNextPart(null);
-    }
-  };
-
-  const tel_download_audio = (url) => {
-    let _blobs = [];
-    let _next_offset = 0;
-    let _total_size = null;
-    let mimeType = "audio/ogg";
-    let fileName = getDownloadFileName(url, getMediaMetadata(url)?.mimeType, "audio");
-
-    const fetchNextPart = (_writable) => {
-      return fetchMediaPart(url, _next_offset, _total_size, "audio")
-        .then(({ blob, mime, totalSize, nextOffset }) => {
-          mimeType = mime;
-          fileName = getDownloadFileName(url, mime, "audio");
-          _next_offset = nextOffset;
-          _total_size = totalSize;
-          return blob;
-        })
-        .then((resBlob) => {
-          if (_writable !== null) {
-            return _writable.write(resBlob);
-          } else {
-            _blobs.push(resBlob);
-          }
-        })
-        .then(async () => {
-          if (_next_offset < _total_size) {
-            return fetchNextPart(_writable);
-          } else {
-            if (_writable !== null) {
-              await _writable.close();
-              logger.info("Download finished", fileName);
-            } else {
-              save();
-            }
-          }
-        })
-        .catch(async (reason) => {
-          if (_writable) {
-            try {
-              await _writable.abort();
-            } catch {
-              // The stream may already be errored or closed.
-            }
-          }
-          logger.error(reason, fileName);
-        });
-    };
-
-    const save = () => {
-      saveMediaBlob(new Blob(_blobs, { type: mimeType }), fileName);
-    };
-
-    const supportsFileSystemAccess =
-      "showSaveFilePicker" in unsafeWindow &&
-      (() => {
-        try {
-          return unsafeWindow.self === unsafeWindow.top;
-        } catch {
-          return false;
-        }
-      })();
-    if (supportsFileSystemAccess) {
-      unsafeWindow
-        .showSaveFilePicker({
-          suggestedName: fileName,
-        })
-        .then((handle) => {
-          handle
-            .createWritable()
-            .then((writable) => {
-              fetchNextPart(writable);
-            })
-            .catch((err) => {
-              console.error(err.name, err.message);
-            });
-        })
-        .catch((err) => {
-          if (err.name !== "AbortError") {
-            console.error(err.name, err.message);
-          }
-        });
-    } else {
-      fetchNextPart(null);
-    }
-  };
-
-  const tel_download_image = async (url) => {
+  const downloadMedia = async (url, kind) => {
+    if (typeof url !== "string" || !url) return;
+    const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    let fileName = getDownloadFileName(url, getMediaMetadata(url)?.mimeType, kind);
+    const parts = [];
+    let writable;
+    createProgressBar(id, fileName);
     try {
-      const parts = [];
+      const pageWindow = typeof unsafeWindow === "undefined" ? window : unsafeWindow;
+      // Invoke the picker before awaiting network work to preserve user activation.
+      if (kind !== "image" && typeof pageWindow.showSaveFilePicker === "function" &&
+          pageWindow.self === pageWindow.top) {
+        const handle = await pageWindow.showSaveFilePicker({ suggestedName: fileName });
+        writable = await handle.createWritable();
+      }
       let offset = 0;
       let total = null;
       let mime;
       do {
-        const part = await fetchMediaPart(url, offset, total, "image");
-        parts.push(part.blob);
+        const part = await fetchMediaPart(url, offset, total, kind);
+        if (writable) await writable.write(part.blob);
+        else parts.push(part.blob);
         offset = part.nextOffset;
         total = part.totalSize;
         mime = part.mime;
+        fileName = getDownloadFileName(url, mime, kind);
+        updateProgress(id, fileName, ((offset * 100) / total).toFixed(0));
       } while (offset < total);
-      saveMediaBlob(new Blob(parts, { type: mime }), getDownloadFileName(url, mime, "image"));
+      if (writable) await writable.close();
+      else saveMediaBlob(new Blob(parts, { type: mime }), fileName);
+      completeProgress(id);
     } catch (error) {
-      logger.error(error);
+      if (writable) {
+        try {
+          await writable.abort();
+        } catch {
+          // Failed or already closed streams may reject abort as well.
+        }
+      }
+      if (error.name !== "AbortError") logger.error(error, fileName);
+      AbortProgress(id);
+    } finally {
+      parts.length = 0;
     }
   };
+  const tel_download_video = (url) => downloadMedia(url, "video");
+  const tel_download_audio = (url) => downloadMedia(url, "audio");
+  const tel_download_image = (url) => downloadMedia(url, "image");
 
   const getMediaSource = (media) =>
     media?.currentSrc || media?.src || media?.querySelector("source")?.src;

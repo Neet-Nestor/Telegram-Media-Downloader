@@ -181,3 +181,31 @@ test('filenames preserve dots and saved types follow the response MIME', async (
     await page.close();
   }
 });
+
+test('picker cancellation and writer creation failures do not start a request', async () => {
+  for (const cancel of [false, true]) {
+    page = await openPage(browser);
+    const result = await page.evaluate(async cancel => {
+      window.showSaveFilePicker = async () => {
+        if (cancel) throw new DOMException('Cancelled', 'AbortError');
+        return { createWritable: async () => { throw new Error('Permission denied'); } };
+      };
+      await downloads.video('https://test.invalid/video');
+      return { requests: requests.length, saved: saved.length, errors };
+    }, cancel);
+    assert.equal(result.requests, 0);
+    assert.equal(result.saved, 0);
+    assert.equal(result.errors.length, cancel ? 0 : 1);
+    await page.close();
+  }
+});
+
+test('downloads work when the script manager does not expose unsafeWindow', async () => {
+  page = await openPage(browser);
+  const result = await page.evaluate(async () => {
+    delete window.unsafeWindow;
+    await downloads.video('https://test.invalid/video');
+    return { saved: saved.length, errors };
+  });
+  assert.deepEqual(result, { saved: 1, errors: [] });
+});
