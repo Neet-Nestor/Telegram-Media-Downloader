@@ -83,6 +83,10 @@ The task panel shows the filename, received size, and download speed. When the t
 
 Keep the Telegram tab open until the transfer finishes. Browsers without direct file saving collect the downloaded data before handing it to the download manager, so large downloads can use substantial browser resources. Errors are also available in the [DevTools console](https://developer.chrome.com/docs/devtools/open/).
 
+On WebK, the script can also use Telegram's own download engine when the current viewer or pinned audio exposes its media metadata. These downloads share the task panel and queue, preserve media filenames, and report byte progress when Telegram provides it. Native transfers run one at a time; URL-based transfers can use the other queue slot. **Sent to browser** means Telegram handed off the file; check the browser's download manager for the final result. Cancellation is available when Telegram exposes a cancellable transfer. Existing native download buttons continue to use Telegram's interface.
+
+If these internal WebK interfaces are unavailable, the script keeps using its URL-based downloader. Once a native transfer starts, errors are shown for manual retry instead of silently starting a second download. WebA and stories retain their existing download paths. Telegram's private interfaces may change, so live WebK testing remains important.
+
 ### Interface Language
 
 The download UI supports English, Simplified Chinese, Traditional Chinese, Russian, and Burmese. It uses the first supported language in your browser's language preferences, falling back to English. Chinese script and regional variants are recognized, including Traditional Chinese for Taiwan, Hong Kong, and Macau.

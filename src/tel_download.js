@@ -45,6 +45,8 @@
       errorIncomplete: "Incomplete media response; received byte count does not match",
       errorTimeout: "No data received for 30 seconds. Please retry.",
       errorUnexpected: "Download failed: {message}",
+      errorNativeUnavailable: "Telegram's download interface is unavailable. Reopen the media and try again.",
+      nativeCancelUnavailable: "This Telegram download cannot be cancelled from this panel",
     },
     "zh-CN": {
       downloads: "下载", downloadsCount: "下载（{count}）", mediaDownloads: "媒体下载",
@@ -64,6 +66,8 @@
       errorIncomplete: "媒体数据不完整；收到的字节数与预期不符",
       errorTimeout: "已连续 30 秒未收到数据，请重试。",
       errorUnexpected: "下载失败：{message}",
+      errorNativeUnavailable: "Telegram 下载接口不可用，请重新打开媒体后重试。",
+      nativeCancelUnavailable: "此 Telegram 下载无法从本面板取消",
     },
     "zh-TW": {
       downloads: "下載", downloadsCount: "下載（{count}）", mediaDownloads: "媒體下載",
@@ -83,6 +87,8 @@
       errorIncomplete: "媒體資料不完整；收到的位元組數與預期不符",
       errorTimeout: "已連續 30 秒未收到資料，請重試。",
       errorUnexpected: "下載失敗：{message}",
+      errorNativeUnavailable: "Telegram 下載介面無法使用，請重新開啟媒體後重試。",
+      nativeCancelUnavailable: "此 Telegram 下載無法從本面板取消",
     },
     ru: {
       downloads: "Загрузки", downloadsCount: "Загрузки ({count})", mediaDownloads: "Загрузка медиа",
@@ -102,6 +108,8 @@
       errorIncomplete: "Данные неполные; число полученных байтов не совпадает с ожидаемым",
       errorTimeout: "Нет данных в течение 30 секунд. Повторите попытку.",
       errorUnexpected: "Не удалось скачать: {message}",
+      errorNativeUnavailable: "Интерфейс загрузки Telegram недоступен. Откройте медиа заново и повторите попытку.",
+      nativeCancelUnavailable: "Эту загрузку Telegram нельзя отменить из этой панели",
     },
     my: {
       downloads: "ဒေါင်းလုဒ်များ", downloadsCount: "ဒေါင်းလုဒ်များ ({count})", mediaDownloads: "မီဒီယာဒေါင်းလုဒ်များ",
@@ -121,6 +129,8 @@
       errorIncomplete: "မီဒီယာဒေတာ မပြည့်စုံပါ။ ရရှိသော ဘိုက်အရေအတွက် မကိုက်ညီပါ",
       errorTimeout: "စက္ကန့် ၃၀ ကြာ ဒေတာမရရှိပါ။ ထပ်စမ်းပါ။",
       errorUnexpected: "ဒေါင်းလုဒ် မအောင်မြင်ပါ: {message}",
+      errorNativeUnavailable: "Telegram ဒေါင်းလုဒ်စနစ် မရရှိနိုင်ပါ။ မီဒီယာကို ပြန်ဖွင့်ပြီး ထပ်စမ်းပါ။",
+      nativeCancelUnavailable: "ဤ Telegram ဒေါင်းလုဒ်ကို ဤနေရာမှ ပယ်ဖျက်၍ မရပါ",
     },
   };
   const LANGUAGE_STORAGE_KEY = "tel-media-downloader-language";
@@ -353,7 +363,7 @@
       return {};
     }
   };
-  const getDownloadFileName = (url, mime, kind) => {
+  const getDownloadFileName = (url, mime, kind, suggestedName) => {
     const extensions = {
       "video/mp4": ["mp4", "m4v"], "video/webm": ["webm"],
       "video/quicktime": ["mov"], "video/x-matroska": ["mkv"],
@@ -365,7 +375,8 @@
       "image/heic": ["heic"], "image/bmp": ["bmp"], "image/svg+xml": ["svg"],
     };
     const metadata = getMediaMetadata(url);
-    let name = typeof metadata?.fileName === "string" ? metadata.fileName : "";
+    let name = typeof suggestedName === "string" ? suggestedName :
+      typeof metadata?.fileName === "string" ? metadata.fileName : "";
     if (!name) {
       try {
         const basename = decodeURIComponent(new URL(url, location.href).pathname.split("/").pop());
@@ -394,11 +405,64 @@
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
+  // WebK exposes these objects to the page. They are private APIs, so every
+  // entry point checks capabilities and leaves the URL backend available.
+  const getWebKPage = () => {
+    if (location.hostname !== "webk.telegram.org" && !location.pathname.startsWith("/k/")) return null;
+    return typeof unsafeWindow === "undefined" ? window : unsafeWindow;
+  };
+  const getWebKMessageMedia = (message) => message?.media?.document || message?.media?.photo;
+  const getWebKMessage = (peerId, mid) => {
+    if (!peerId || !Number.isSafeInteger(Number(mid)) || !Number(mid)) return null;
+    const page = getWebKPage();
+    for (const source of [page?.apiManagerProxy, page?.mtprotoMessagePort, page?.appImManager?.chat]) {
+      if (typeof source?.getMessageByPeer !== "function") continue;
+      try {
+        const message = source.getMessageByPeer(peerId, Number(mid));
+        // Do not make an asynchronous lookup here: URL fallback may need the
+        // original click's user activation for the save-file picker.
+        if (message?.then) { Promise.resolve(message).catch(() => {}); continue; }
+        if (message && String(message.peerId) === String(peerId) && Number(message.mid ?? message.id) === Number(mid)) return message;
+      } catch { /* An older/newer WebK may expose a different lookup API. */ }
+    }
+    return null;
+  };
+  const getWebKDownload = (media) => {
+    const manager = getWebKPage()?.appDownloadManager;
+    if (typeof manager?.downloadToDisc !== "function" || !media?.id) return null;
+    const mime = media._ === "photo" ? "image/jpeg" :
+      typeof media.mime_type === "string" ? media.mime_type.toLowerCase() : "";
+    const kind = mime?.split("/")[0];
+    if (!["photo", "document"].includes(media._) || !["image", "video", "audio"].includes(kind)) return null;
+    const name = media.file_name || (Array.isArray(media.attributes) &&
+      media.attributes.find(attribute => attribute._ === "documentAttributeFilename")?.file_name);
+    return {
+      manager, media, kind, key: `webk:${media._}:${media.id}`,
+      fileName: getDownloadFileName(String(media.id), mime, kind, name || `${kind}_${media.id}`),
+    };
+  };
+  const getWebKViewerDownload = (viewer) => {
+    try {
+      const nativeViewer = getWebKPage()?.appMediaViewer;
+      if (nativeViewer?.wholeDiv && nativeViewer.wholeDiv !== viewer) return null;
+      const target = nativeViewer?.target;
+      // Indexed rich/paid media need a separate resolver; never guess which
+      // item the user is viewing from the enclosing message alone.
+      if (!target || (typeof target.index === "number" && target.index >= 0)) return null;
+      const embedded = target.message;
+      const matches = embedded && (!target.peerId || String(embedded.peerId) === String(target.peerId)) &&
+        (!target.mid || Number(embedded.mid ?? embedded.id) === Number(target.mid));
+      const message = matches ? embedded : getWebKMessage(target.peerId, target.mid);
+      return getWebKDownload(target.media || getWebKMessageMedia(message));
+    } catch { return null; }
+  };
+
   const downloadTasks = new Map();
   const activeDownloads = new Map();
   const downloadQueue = [];
   const MAX_CONCURRENT_DOWNLOADS = 2;
   let runningDownloads = 0;
+  let runningNativeDownloads = 0;
 
   const formatBytes = (bytes) => {
     const units = ["B", "KB", "MB", "GB", "TB"];
@@ -439,13 +503,13 @@
         <div class="tel-task-actions"><button type="button" data-action="cancel"></button><button type="button" data-action="retry" hidden></button></div>`;
       card.querySelector('[data-action="dismiss"]').onclick = () => dismissTask(task);
       card.querySelector('[data-action="cancel"]').onclick = () => {
-        if (task.finished || task.state === "saving") return;
+        if (task.finished || task.state === "saving" || task.nativeCancelUnavailable) return;
         task.controller.abort(new DOMException("Download cancelled", "AbortError"));
         if (!task.running) finishTask(task, "cancelled");
       };
       card.querySelector('[data-action="retry"]').onclick = () => {
         dismissTask(task);
-        downloadMedia(task.url, task.kind);
+        downloadMedia(task.url, task.kind, task.native);
       };
       list.prepend(card);
     }
@@ -482,7 +546,8 @@
     const cancel = card.querySelector('[data-action="cancel"]');
     cancel.textContent = t("cancel");
     cancel.hidden = task.finished;
-    cancel.disabled = task.state === "saving";
+    cancel.disabled = task.state === "saving" || !!task.nativeCancelUnavailable;
+    cancel.title = task.nativeCancelUnavailable ? t("nativeCancelUnavailable") : "";
     const retry = card.querySelector('[data-action="retry"]');
     retry.textContent = t("retry");
     retry.hidden = !["failed", "cancelled"].includes(task.state);
@@ -503,6 +568,46 @@
     updateTaskPanel();
     task.resolve({ state, fileName: task.fileName, received: task.received });
   };
+  const updateTaskProgress = (task, received, total) => {
+    if (task.finished || task.controller.signal.aborted) return;
+    if (!Number.isFinite(received) || received < 0) return;
+    task.received = received;
+    task.total = Number.isFinite(total) && total > 0 ? total : null;
+    if ((!task.renderedBytes && received) || performance.now() - task.renderedAt >= 100 || received === total) {
+      renderTask(task);
+    } else if (!task.progressTimer) {
+      task.progressTimer = setTimeout(() => {
+        task.progressTimer = null;
+        renderTask(task);
+      }, 100);
+    }
+  };
+  const runNativeTask = async (task) => {
+    const { manager, media } = task.native;
+    if (typeof manager.downloadToDisc !== "function") throw downloadError("errorNativeUnavailable");
+    const operation = manager.downloadToDisc({ media });
+    if (typeof operation?.then !== "function") throw downloadError("errorNativeUnavailable");
+    task.nativeCancelUnavailable = typeof operation.cancel !== "function";
+    renderTask(task);
+    const abort = () => {
+      try { operation.cancel?.(); } catch (error) { logger.error(error, task.fileName); }
+    };
+    const progress = (details) => updateTaskProgress(task, details?.done, details?.total);
+    task.controller.signal.addEventListener("abort", abort, { once: true });
+    try {
+      // Progress is optional; a changed notification API must not start a
+      // second transfer or turn a working native download into a failure.
+      try { operation.addNotifyListener?.(progress); } catch { /* Indeterminate progress. */ }
+      await operation;
+      if (task.controller.signal.aborted) throw task.controller.signal.reason;
+      // Telegram owns the final browser/SW hand-off, not the actual disk save.
+      finishTask(task, "handedOff");
+    } finally {
+      task.controller.signal.removeEventListener("abort", abort);
+      const index = operation.listeners?.indexOf(progress);
+      if (index >= 0) operation.listeners.splice(index, 1);
+    }
+  };
   const runTask = async (task) => {
     const parts = [];
     let writable;
@@ -518,6 +623,10 @@
       task.state = "downloading";
       task.startedAt = performance.now();
       renderTask(task);
+      if (task.native) {
+        await runNativeTask(task);
+        return;
+      }
       let offset = 0;
       let total = null;
       let mime;
@@ -525,18 +634,7 @@
         const part = await fetchMediaPart(task.url, offset, total, task.kind, {
           signal: task.controller.signal,
           write: writable ? (chunk) => writable.write(chunk) : undefined,
-          onProgress: (received, size) => {
-            task.received = received;
-            task.total = size;
-            if ((!task.renderedBytes && received) || performance.now() - task.renderedAt >= 100 || received === size) {
-              renderTask(task);
-            } else if (!task.progressTimer) {
-              task.progressTimer = setTimeout(() => {
-                task.progressTimer = null;
-                renderTask(task);
-              }, 100);
-            }
-          },
+          onProgress: (received, size) => updateTaskProgress(task, received, size),
         });
         checkCancelled();
         if (!writable) parts.push(part.blob);
@@ -558,7 +656,7 @@
       if (writable) {
         try { await writable.abort(); } catch { /* Already closed or errored. */ }
       }
-      if (task.controller.signal.aborted || error.name === "AbortError") finishTask(task, "cancelled");
+      if (task.controller.signal.aborted || error?.name === "AbortError" || error?.type === "DOWNLOAD_CANCELED") finishTask(task, "cancelled");
       else finishTask(task, "failed", error);
     } finally {
       parts.length = 0;
@@ -567,20 +665,26 @@
   };
   const pumpDownloads = () => {
     while (runningDownloads < MAX_CONCURRENT_DOWNLOADS && downloadQueue.length) {
-      const task = downloadQueue.shift();
+      // Serialize native Service Worker hand-offs, including large files. URL
+      // transfers can still use the other slot while a native transfer runs.
+      const index = downloadQueue.findIndex(task => task.finished || !task.native || !runningNativeDownloads);
+      if (index < 0) break;
+      const [task] = downloadQueue.splice(index, 1);
       if (task.finished) continue;
       runningDownloads++;
+      if (task.native) runningNativeDownloads++;
       task.running = true;
       runTask(task).finally(() => {
         task.running = false;
         runningDownloads--;
+        if (task.native) runningNativeDownloads--;
         pumpDownloads();
       });
     }
   };
-  const downloadMedia = (url, kind) => {
-    if (typeof url !== "string" || !url) return Promise.resolve();
-    const key = `${kind}:${url}`;
+  const downloadMedia = (url, kind, native = null) => {
+    if (!native && (typeof url !== "string" || !url)) return Promise.resolve();
+    const key = native?.key || `${kind}:${url}`;
     const existing = activeDownloads.get(key);
     if (existing) {
       const card = showTask(existing);
@@ -595,7 +699,7 @@
     }
     const task = {
       id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-      key, url, kind, fileName: getDownloadFileName(url, getMediaMetadata(url)?.mimeType, kind),
+      key, url, kind, native, fileName: native?.fileName || getDownloadFileName(url, getMediaMetadata(url)?.mimeType, kind),
       state: "preparing", received: 0, total: null, controller: new AbortController(),
       startedAt: performance.now(), renderedAt: 0, finished: false,
     };
@@ -613,7 +717,7 @@
     };
     try {
       const pageWindow = typeof unsafeWindow === "undefined" ? window : unsafeWindow;
-      if (kind !== "image" && typeof pageWindow.showSaveFilePicker === "function" &&
+      if (!native && kind !== "image" && typeof pageWindow.showSaveFilePicker === "function" &&
           pageWindow.self === pageWindow.top) {
         // Keep the picker inside the original click, before queueing or fetching.
         Promise.resolve(pageWindow.showSaveFilePicker({ suggestedName: task.fileName }))
@@ -640,6 +744,7 @@
     const mid = pinned?.getAttribute("data-mid");
     if (!mid) return null;
     const peer = pinned.getAttribute("data-peer-id");
+    const native = getWebKDownload(getWebKMessageMedia(getWebKMessage(peer, mid)));
     const candidates = Array.from(document.querySelectorAll("audio-element")).filter(
       (element) => element.closest(".bubble") && element.getAttribute("data-mid") === mid &&
         (!peer || element.closest("[data-peer-id]")?.getAttribute("data-peer-id") === peer)
@@ -647,7 +752,8 @@
     const element = candidates.length === 1 ? candidates[0] :
       candidates.find((candidate) => candidate.audio && !candidate.audio.paused);
     const url = getMediaSource(element?.audio);
-    return url ? { url, kind: element.audio.tagName === "AUDIO" ? "audio" : "video" } : null;
+    return native ? { url, kind: native.kind, native } :
+      url ? { url, kind: element.audio.tagName === "AUDIO" ? "audio" : "video" } : null;
   };
 
   const downloadCurrentWebKMedia = () => {
@@ -667,7 +773,9 @@
     const media = viewer.querySelector(".media-viewer-movers .media-viewer-aspecter");
     const videoUrl = getMediaSource(media?.querySelector("video"));
     const imageUrl = getMediaSource(media?.querySelector("img.thumbnail"));
-    if (videoUrl) tel_download_video(videoUrl);
+    const native = getWebKViewerDownload(viewer);
+    if (native) downloadMedia(videoUrl || imageUrl, native.kind, native);
+    else if (videoUrl) tel_download_video(videoUrl);
     else if (imageUrl) tel_download_image(imageUrl);
   };
 
@@ -759,8 +867,7 @@
           event.stopPropagation();
           const media = getPinnedMedia();
           if (!media) return;
-          if (media.kind === "audio") tel_download_audio(media.url);
-          else tel_download_video(media.url);
+          downloadMedia(media.url, media.kind, media.native);
         };
         pinnedUtils.appendChild(button);
       }
@@ -879,10 +986,7 @@
     } else if (!hasDownloadButton) {
       // 3. Image without download button detected
       // container > img.thumbnail
-      if (
-        !mediaAspecter.querySelector("img.thumbnail") ||
-        !mediaAspecter.querySelector("img.thumbnail").src
-      ) {
+      if (!getWebKViewerDownload(mediaContainer) && !mediaAspecter.querySelector("img.thumbnail")?.src) {
         return;
       }
       const downloadButton = document.createElement("button");
