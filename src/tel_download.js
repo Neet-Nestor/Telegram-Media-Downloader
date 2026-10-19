@@ -764,10 +764,12 @@
     );
     if (!mediaAspecter || !mediaButtons) return;
 
-    // Query hidden buttons and unhide them
-    const hiddenButtons = mediaButtons.querySelectorAll("button.btn-icon.hide");
-    for (const btn of hiddenButtons) {
-      btn.classList.remove("hide");
+    // Restore only identified download controls. Other hidden actions may be
+    // unavailable for this media and should remain under Telegram's control.
+    for (const button of getWebKDownloadButtons(mediaButtons)) {
+      if (!button.disabled && button.getAttribute("aria-disabled") !== "true") {
+        button.classList.remove("hide");
+      }
     }
 
     // Recognize native downloads by their purpose, not their font code point.

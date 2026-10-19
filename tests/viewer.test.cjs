@@ -98,3 +98,16 @@ test('WebK icons fall back to SVG and follow native code point changes', async (
   });
   assert.deepEqual(result, { fallback: true, initial: '\ue973', updated: '\uea55' });
 });
+
+test('restoring downloads does not expose unrelated hidden actions', async () => {
+  page = await openPage(browser, media('<img class="thumbnail" src="https://test.invalid/photo.jpg">'));
+  const result = await page.evaluate(() => {
+    document.querySelector('.media-viewer-buttons').innerHTML = '<button class="btn-icon hide" aria-label="Delete"></button><button class="btn-icon hide" aria-label="Download"></button>';
+    refresh();
+    return {
+      deleteHidden: document.querySelector('[aria-label="Delete"]').classList.contains('hide'),
+      downloadHidden: document.querySelector('[aria-label="Download"]').classList.contains('hide'),
+    };
+  });
+  assert.deepEqual(result, { deleteHidden: true, downloadHidden: false });
+});
