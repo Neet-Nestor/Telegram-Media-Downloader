@@ -173,7 +173,7 @@
   };
   const formatDownloadError = (error) => {
     if (!error) return "";
-    if (!error.translationKey) return t("errorUnexpected", { message: error.message || String(error) });
+    if (!error.translationKey) return t("errorUnexpected", { message: error.message || error.type || String(error) });
     const params = { ...error.params };
     if (error.translationKey === "errorMime") {
       params.kind = t(params.kind);

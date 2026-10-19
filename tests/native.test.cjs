@@ -103,7 +103,7 @@ test('native failure is visible and retry does not silently duplicate a transfer
   page = await openNative();
   const result = await page.evaluate(async () => {
     document.querySelector('.media-viewer-buttons .tel-download').click();
-    nativeCalls[0].reject(new Error('Native transfer failed'));
+    nativeCalls[0].reject({ type: 'FILE_REFERENCE_EXPIRED' });
     await settle();
     const failed = document.querySelector('.tel-task').dataset.state;
     const error = document.querySelector('.tel-task-error').textContent;
@@ -113,7 +113,7 @@ test('native failure is visible and retry does not silently duplicate a transfer
     return { failed, error, calls: nativeCalls.length, requests, state: document.querySelector('.tel-task').dataset.state };
   });
   assert.equal(result.failed, 'failed');
-  assert.match(result.error, /Native transfer failed/);
+  assert.match(result.error, /FILE_REFERENCE_EXPIRED/);
   assert.equal(result.calls, 2);
   assert.deepEqual(result.requests, []);
   assert.equal(result.state, 'handedOff');
