@@ -204,7 +204,7 @@
     logger.info(`URL: ${url}`, fileName);
 
     const fetchNextPart = (_writable) => {
-      fetch(url, {
+      return fetch(url, {
         method: "GET",
         headers: {
           Range: `bytes=${_next_offset}-`,
@@ -265,30 +265,36 @@
         })
         .then((resBlob) => {
           if (_writable !== null) {
-            _writable.write(resBlob).then(() => {});
+            return _writable.write(resBlob);
           } else {
             _blobs.push(resBlob);
           }
         })
-        .then(() => {
+        .then(async () => {
           if (!_total_size) {
             throw new Error("_total_size is NULL");
           }
 
           if (_next_offset < _total_size) {
-            fetchNextPart(_writable);
+            return fetchNextPart(_writable);
           } else {
             if (_writable !== null) {
-              _writable.close().then(() => {
-                logger.info("Download finished", fileName);
-              });
+              await _writable.close();
+              logger.info("Download finished", fileName);
             } else {
               save();
             }
             completeProgress(videoId);
           }
         })
-        .catch((reason) => {
+        .catch(async (reason) => {
+          if (_writable) {
+            try {
+              await _writable.abort();
+            } catch {
+              // The stream may already be errored or closed.
+            }
+          }
           logger.error(reason, fileName);
           AbortProgress(videoId);
         });
@@ -357,7 +363,7 @@
     const fileName = hashCode(url).toString(36) + ".ogg";
 
     const fetchNextPart = (_writable) => {
-      fetch(url, {
+      return fetch(url, {
         method: "GET",
         headers: {
           Range: `bytes=${_next_offset}-`,
@@ -394,25 +400,31 @@
         })
         .then((resBlob) => {
           if (_writable !== null) {
-            _writable.write(resBlob).then(() => {});
+            return _writable.write(resBlob);
           } else {
             _blobs.push(resBlob);
           }
         })
-        .then(() => {
+        .then(async () => {
           if (_next_offset < _total_size) {
-            fetchNextPart(_writable);
+            return fetchNextPart(_writable);
           } else {
             if (_writable !== null) {
-              _writable.close().then(() => {
-                logger.info("Download finished", fileName);
-              });
+              await _writable.close();
+              logger.info("Download finished", fileName);
             } else {
               save();
             }
           }
         })
-        .catch((reason) => {
+        .catch(async (reason) => {
+          if (_writable) {
+            try {
+              await _writable.abort();
+            } catch {
+              // The stream may already be errored or closed.
+            }
+          }
           logger.error(reason, fileName);
         });
     };
