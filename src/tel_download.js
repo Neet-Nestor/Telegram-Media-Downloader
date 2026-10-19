@@ -153,6 +153,7 @@
     const innerContainer = document.getElementById(
       "tel-downloader-progress-" + videoId
     );
+    if (!innerContainer) return;
     innerContainer.querySelector("p.filename").innerText = fileName;
     const progressBar = innerContainer.querySelector("div.progress");
     progressBar.querySelector("p").innerText = progress + "%";
@@ -162,7 +163,8 @@
   const completeProgress = (videoId) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
-      .querySelector("div.progress");
+      ?.querySelector("div.progress");
+    if (!progressBar) return;
     progressBar.querySelector("p").innerText = "Completed";
     progressBar.querySelector("div").style.backgroundColor = "#B6C649";
     progressBar.querySelector("div").style.width = "100%";
@@ -171,7 +173,8 @@
   const AbortProgress = (videoId) => {
     const progressBar = document
       .getElementById("tel-downloader-progress-" + videoId)
-      .querySelector("div.progress");
+      ?.querySelector("div.progress");
+    if (!progressBar) return;
     progressBar.querySelector("p").innerText = "Aborted";
     progressBar.querySelector("div").style.backgroundColor = "#D16666";
     progressBar.querySelector("div").style.width = "100%";
@@ -338,8 +341,8 @@
           handle
             .createWritable()
             .then((writable) => {
-              fetchNextPart(writable);
-              createProgressBar(videoId);
+              createProgressBar(videoId, fileName);
+              return fetchNextPart(writable);
             })
             .catch((err) => {
               console.error(err.name, err.message);
@@ -351,8 +354,8 @@
           }
         });
     } else {
-      fetchNextPart(null);
-      createProgressBar(videoId);
+      createProgressBar(videoId, fileName);
+      return fetchNextPart(null);
     }
   };
 

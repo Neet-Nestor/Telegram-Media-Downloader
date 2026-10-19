@@ -86,3 +86,22 @@ test('disk completion waits for write and close', async () => {
   assert.equal(result.final, 'Completed');
   assert.deepEqual(result.errors, []);
 });
+
+test('dismissing progress does not cancel a download or break error handling', async () => {
+  for (const fail of [false, true]) {
+    page = await openPage(browser);
+    const result = await page.evaluate(async fail => {
+      let respond;
+      fetch = () => new Promise(resolve => { respond = resolve; });
+      downloads.video('https://test.invalid/video');
+      document.querySelector('#tel-downloader-progress-bar-container > div > div > div').click();
+      respond(response('video/mp4', fail ? null : 'bytes 0-2/3', 'abc', fail ? 500 : 206));
+      await settle();
+      return { saved: saved.length, errors };
+    }, fail);
+    assert.equal(result.saved, fail ? 0 : 1);
+    assert.equal(result.errors.length, fail ? 1 : 0);
+    assert.ok(result.errors.every(error => !error.includes('null')));
+    await page.close();
+  }
+});
