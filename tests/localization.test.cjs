@@ -9,6 +9,69 @@ afterEach(async () => { await page?.close(); });
 const panel = '#tel-downloader-progress-bar-container';
 const languageSelect = '#tel-download-language';
 const image = '<img class="thumbnail" src="https://test.invalid/photo.jpg">';
+const chooseLanguage = async value => {
+  if (!await page.locator(languageSelect).isVisible()) await page.locator('.tel-settings-toggle').click();
+  await page.selectOption(languageSelect, value);
+};
+
+test('language settings stay out of the task layout and support keyboard and outside dismissal', async () => {
+  page = await openPage(browser);
+  await page.evaluate(async () => {
+    window.escaped = 0;
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') escaped++; });
+    await downloads.image('https://test.invalid/photo.jpg');
+  });
+  const toggle = page.getByRole('button', { name: 'Settings', exact: true });
+  assert.equal(await page.locator(languageSelect).isVisible(), false);
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  const gap = await page.evaluate(() => document.querySelector('.tel-task').getBoundingClientRect().top
+    - document.querySelector('.tel-panel-heading').getBoundingClientRect().bottom);
+  assert.equal(gap, 0);
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.locator(languageSelect).evaluate(node => node === document.activeElement), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator(languageSelect).isVisible(), false);
+  assert.equal(await toggle.evaluate(node => node === document.activeElement), true);
+  assert.equal(await page.evaluate(() => escaped), 0);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => escaped), 1);
+  await page.keyboard.press('Space');
+  await chooseLanguage('zh-CN');
+  assert.equal(await page.locator('.tel-settings-toggle').getAttribute('aria-label'), '设置');
+  assert.equal(await page.locator('.tel-settings-toggle').getAttribute('title'), '设置');
+  await page.locator('.tel-panel-title').click();
+  assert.equal(await page.locator(languageSelect).isVisible(), false);
+  assert.equal(await page.locator('.tel-settings-toggle').getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('.progress p').textContent(), '已交给浏览器');
+  assert.deepEqual(await page.evaluate(() => ({ requests: requests.length, saved: saved.length, errors })), {
+    requests: 1, saved: 1, errors: [],
+  });
+});
+
+test('collapsing or dismissing the panel closes settings without resetting the language', async () => {
+  page = await openPage(browser);
+  await page.evaluate(() => downloads.image('https://test.invalid/photo.jpg'));
+  await chooseLanguage('ru');
+  await page.locator('.tel-panel-toggle').focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await page.locator('.tel-task-list').isVisible(), false);
+  assert.equal(await page.locator(languageSelect).isVisible(), false);
+  await page.locator('.tel-settings-toggle').click();
+  assert.equal(await page.locator('.tel-task-list').isVisible(), false);
+  assert.equal(await page.locator(languageSelect).inputValue(), 'ru');
+  await page.locator('.tel-panel-toggle').click();
+  assert.equal(await page.locator('.tel-task-list').isVisible(), true);
+  await page.locator('.tel-settings-toggle').click();
+  await page.locator('[data-action="dismiss"]').focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await page.locator(panel).isVisible(), false);
+  await page.evaluate(() => downloads.image('https://test.invalid/next.jpg'));
+  assert.equal(await page.locator(languageSelect).isVisible(), false);
+  assert.equal(await page.locator('.tel-settings-toggle').getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator(languageSelect).inputValue(), 'ru');
+});
 
 test('translation catalogs have every message and preserve interpolation parameters', async () => {
   page = await openPage(browser);
@@ -65,7 +128,7 @@ test('switching language during a download updates controls without restarting o
     stream.enqueue(new Uint8Array(1024));
   });
   await page.locator('.tel-panel-toggle').click();
-  await page.selectOption(languageSelect, 'ru');
+  await chooseLanguage('ru');
   assert.equal(await page.locator('.tel-panel-title').textContent(), 'Загрузки (1)');
   assert.equal(await page.locator('.tel-panel-toggle').textContent(), 'Развернуть');
   assert.equal(await page.locator('.tel-task-list').evaluate(node => node.hidden), true);
@@ -86,7 +149,7 @@ test('switching language during a download updates controls without restarting o
 test('manual preference survives reload and browser changes; automatic mode can be restored', async () => {
   page = await openPage(browser, media(image), '/a/', { locale: 'zh-TW' });
   await page.evaluate(() => downloads.image('https://test.invalid/photo.jpg'));
-  await page.selectOption(languageSelect, 'ru');
+  await chooseLanguage('ru');
   await page.reload();
   await installScript(page);
   assert.equal(await page.locator(panel).getAttribute('lang'), 'ru');
@@ -115,7 +178,7 @@ test('invalid or unavailable storage does not prevent downloading or in-session 
     });
     assert.equal(await page.locator(panel).getAttribute('lang'), 'zh-CN');
     await page.evaluate(() => downloads.image('https://test.invalid/photo.jpg'));
-    await page.selectOption(languageSelect, 'en');
+    await chooseLanguage('en');
     assert.equal(await page.locator('.progress p').textContent(), 'Sent to browser');
     assert.deepEqual(await page.evaluate(() => ({ saved: saved.length, errors })), { saved: 1, errors: [] });
     await page.close();
@@ -150,7 +213,7 @@ test('existing errors translate on demand and retry still downloads successfully
     await downloads.video('https://test.invalid/video');
   });
   assert.equal(await page.locator('.tel-task-error').textContent(), '下载请求失败（HTTP 500）');
-  await page.selectOption(languageSelect, 'zh-TW');
+  await chooseLanguage('zh-TW');
   assert.equal(await page.locator('.tel-task-error').textContent(), '下載請求失敗（HTTP 500）');
   assert.equal(await page.locator('.progress p').textContent(), '失敗');
   await page.evaluate(() => { fetch = async () => response('video/mp4', 'bytes 0-2/3'); });
@@ -205,7 +268,7 @@ test('all language choices fit a narrow screen and keep controls reachable in da
     await downloads.video('https://test.invalid/video');
   });
   for (const locale of ['en', 'zh-CN', 'zh-TW', 'ru', 'my']) {
-    await page.selectOption(languageSelect, locale);
+    await chooseLanguage(locale);
     const layout = await page.locator(panel).evaluate(node => {
       const rect = node.getBoundingClientRect();
       return {

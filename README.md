@@ -87,7 +87,7 @@ Keep the Telegram tab open until the transfer finishes. Browsers without direct 
 
 The download UI supports English, Simplified Chinese, Traditional Chinese, Russian, and Burmese. It uses the first supported language in your browser's language preferences, falling back to English. Chinese script and regional variants are recognized, including Traditional Chinese for Taiwan, Hong Kong, and Macau.
 
-Use **Interface language** in the download panel to choose a language or return to **Browser language**. Changes apply immediately to existing tasks, errors, and the script's download buttons without interrupting downloads. The preference is saved on the current Telegram web origin and shared across its tabs; if browser storage is blocked, it lasts for the current page only. Browser-provided dialogs and technical error details keep their original language.
+Open the gear-shaped **Settings** button in the download panel, then use **Interface language** to choose a language or return to **Browser language**. Changes apply immediately to existing tasks, errors, and the script's download buttons without interrupting downloads. The preference is saved on the current Telegram web origin and shared across its tabs; if browser storage is blocked, it lasts for the current page only. Browser-provided dialogs and technical error details keep their original language.
 
 ## Contributing
 

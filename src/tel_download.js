@@ -31,7 +31,7 @@
       downloads: "Downloads", downloadsCount: "Downloads ({count})", mediaDownloads: "Media downloads",
       download: "Download", loadingMedia: "Media is loading", hide: "Hide", show: "Show",
       dismiss: "Dismiss download", progress: "Download progress", cancel: "Cancel", retry: "Retry",
-      language: "Interface language", automatic: "Browser language",
+      settings: "Settings", language: "Interface language", automatic: "Browser language",
       preparing: "Preparing", queued: "Queued", downloading: "Downloading", saving: "Saving",
       completed: "Completed", handedOff: "Sent to browser", failed: "Failed", cancelled: "Cancelled",
       rate: "{speed}/s", video: "video", audio: "audio", image: "image", unknownType: "an unknown file type",
@@ -50,7 +50,7 @@
       downloads: "下载", downloadsCount: "下载（{count}）", mediaDownloads: "媒体下载",
       download: "下载", loadingMedia: "媒体正在加载", hide: "收起", show: "展开",
       dismiss: "移除下载卡片", progress: "下载进度", cancel: "取消", retry: "重试",
-      language: "界面语言", automatic: "跟随浏览器",
+      settings: "设置", language: "界面语言", automatic: "跟随浏览器",
       preparing: "准备中", queued: "排队中", downloading: "下载中", saving: "保存中",
       completed: "已完成", handedOff: "已交给浏览器", failed: "失败", cancelled: "已取消",
       rate: "{speed}/秒", video: "视频", audio: "音频", image: "图片", unknownType: "未知文件类型",
@@ -69,7 +69,7 @@
       downloads: "下載", downloadsCount: "下載（{count}）", mediaDownloads: "媒體下載",
       download: "下載", loadingMedia: "媒體正在載入", hide: "收合", show: "展開",
       dismiss: "移除下載卡片", progress: "下載進度", cancel: "取消", retry: "重試",
-      language: "介面語言", automatic: "跟隨瀏覽器",
+      settings: "設定", language: "介面語言", automatic: "跟隨瀏覽器",
       preparing: "準備中", queued: "排隊中", downloading: "下載中", saving: "儲存中",
       completed: "已完成", handedOff: "已交給瀏覽器", failed: "失敗", cancelled: "已取消",
       rate: "{speed}/秒", video: "影片", audio: "音訊", image: "圖片", unknownType: "未知檔案類型",
@@ -88,7 +88,7 @@
       downloads: "Загрузки", downloadsCount: "Загрузки ({count})", mediaDownloads: "Загрузка медиа",
       download: "Скачать", loadingMedia: "Медиа загружается", hide: "Свернуть", show: "Развернуть",
       dismiss: "Убрать карточку загрузки", progress: "Ход загрузки", cancel: "Отменить", retry: "Повторить",
-      language: "Язык интерфейса", automatic: "Язык браузера",
+      settings: "Настройки", language: "Язык интерфейса", automatic: "Язык браузера",
       preparing: "Подготовка", queued: "В очереди", downloading: "Загрузка", saving: "Сохранение",
       completed: "Завершено", handedOff: "Передано браузеру", failed: "Ошибка", cancelled: "Отменено",
       rate: "{speed}/с", video: "видео", audio: "аудио", image: "изображение", unknownType: "неизвестный тип файла",
@@ -107,7 +107,7 @@
       downloads: "ဒေါင်းလုဒ်များ", downloadsCount: "ဒေါင်းလုဒ်များ ({count})", mediaDownloads: "မီဒီယာဒေါင်းလုဒ်များ",
       download: "ဒေါင်းလုဒ်လုပ်ရန်", loadingMedia: "မီဒီယာကို ဖွင့်နေသည်", hide: "ဖျောက်ရန်", show: "ပြရန်",
       dismiss: "ဒေါင်းလုဒ်ကတ်ကို ဖယ်ရှားရန်", progress: "ဒေါင်းလုဒ်တိုးတက်မှု", cancel: "ပယ်ဖျက်ရန်", retry: "ထပ်စမ်းရန်",
-      language: "မျက်နှာပြင်ဘာသာစကား", automatic: "ဘရောက်ဇာဘာသာစကား",
+      settings: "ဆက်တင်များ", language: "မျက်နှာပြင်ဘာသာစကား", automatic: "ဘရောက်ဇာဘာသာစကား",
       preparing: "ပြင်ဆင်နေသည်", queued: "စောင့်ဆိုင်းနေသည်", downloading: "ဒေါင်းလုဒ်လုပ်နေသည်", saving: "သိမ်းဆည်းနေသည်",
       completed: "ပြီးစီးပြီ", handedOff: "ဘရောက်ဇာသို့ လွှဲပေးပြီး", failed: "မအောင်မြင်ပါ", cancelled: "ပယ်ဖျက်ပြီး",
       rate: "{speed}/စက္ကန့်", video: "ဗီဒီယို", audio: "အသံ", image: "ပုံ", unknownType: "အမည်မသိ ဖိုင်အမျိုးအစား",
@@ -409,6 +409,7 @@
     const panel = document.getElementById("tel-downloader-progress-bar-container");
     if (!panel) return;
     panel.hidden = !panel.querySelector(".tel-task");
+    if (panel.hidden) setSettingsOpen(false);
     panel.querySelector(".tel-panel-title").textContent = activeDownloads.size
       ? t("downloadsCount", { count: integerFormat.format(activeDownloads.size) }) : t("downloads");
   };
@@ -899,8 +900,43 @@
   panel.id = "tel-downloader-progress-bar-container";
   panel.dir = "ltr";
   panel.hidden = true;
-  panel.innerHTML = '<div class="tel-panel-heading"><strong class="tel-panel-title"></strong><button class="tel-panel-toggle" type="button" aria-expanded="true" aria-controls="tel-task-list"></button></div><div class="tel-language-setting"><label for="tel-download-language"></label><select id="tel-download-language"></select></div><div id="tel-task-list" class="tel-task-list"></div>';
+  panel.innerHTML = `
+    <div class="tel-panel-heading">
+      <strong class="tel-panel-title"></strong>
+      <div class="tel-panel-tools">
+        <button class="tel-settings-toggle" type="button" aria-expanded="false" aria-controls="tel-download-settings">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 2h4l.6 3 2 1.2 2.9-.9 2 3.4-2.3 2v2.6l2.3 2-2 3.4-2.9-.9-2 1.2L14 22h-4l-.6-3-2-1.2-2.9.9-2-3.4 2.3-2v-2.6l-2.3-2 2-3.4 2.9.9 2-1.2Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button class="tel-panel-toggle" type="button" aria-expanded="true" aria-controls="tel-task-list"></button>
+      </div>
+    </div>
+    <div id="tel-download-settings" class="tel-language-setting" hidden><label for="tel-download-language"></label><select id="tel-download-language"></select></div>
+    <div id="tel-task-list" class="tel-task-list"></div>`;
   const languageSelect = panel.querySelector("select");
+  const settings = panel.querySelector("#tel-download-settings");
+  const settingsToggle = panel.querySelector(".tel-settings-toggle");
+  const setSettingsOpen = (open) => {
+    const returnFocus = !open && settings.contains(document.activeElement);
+    settings.hidden = !open;
+    settingsToggle.setAttribute("aria-expanded", String(open));
+    if (open) languageSelect.focus();
+    else if (returnFocus && !panel.hidden) settingsToggle.focus();
+  };
+  settingsToggle.onclick = () => setSettingsOpen(settings.hidden);
+  panel.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !settings.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSettingsOpen(false);
+    }
+  });
+  // Wait for the click: closing settings moves this bottom-anchored panel,
+  // which must not move a control between pointer-down and pointer-up.
+  document.addEventListener("click", event => {
+    if (!settings.hidden && !settings.contains(event.target) && !settingsToggle.contains(event.target)) {
+      setSettingsOpen(false);
+    }
+  });
   for (const [value, label] of [["auto", ""], ...Object.entries(UI_LANGUAGES)]) {
     const option = document.createElement("option");
     option.value = value;
@@ -914,6 +950,8 @@
     decimalFormat = new Intl.NumberFormat(uiLanguage, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     panel.lang = uiLanguage;
     panel.setAttribute("aria-label", t("mediaDownloads"));
+    settingsToggle.title = t("settings");
+    settingsToggle.setAttribute("aria-label", t("settings"));
     panel.querySelector("label").textContent = t("language");
     languageSelect.querySelector('[value="auto"]').textContent = t("automatic");
     languageSelect.value = languagePreference;
@@ -946,6 +984,7 @@
   panel.querySelector(".tel-panel-toggle").onclick = () => {
     const list = panel.querySelector(".tel-task-list");
     list.hidden = !list.hidden;
+    if (list.hidden) setSettingsOpen(false);
     const toggle = panel.querySelector(".tel-panel-toggle");
     toggle.textContent = t(list.hidden ? "show" : "hide");
     toggle.setAttribute("aria-expanded", String(!list.hidden));
@@ -973,6 +1012,7 @@
     }
     #tel-downloader-progress-bar-container .tel-panel-heading { padding: 10px 12px; flex-shrink: 0; }
     #tel-downloader-progress-bar-container .tel-panel-title { min-width: 0; overflow-wrap: anywhere; }
+    #tel-downloader-progress-bar-container .tel-panel-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
     #tel-downloader-progress-bar-container .tel-language-setting { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; flex-shrink: 0; }
     #tel-downloader-progress-bar-container .tel-language-setting label { flex: 1; min-width: 0; color: var(--tel-muted); overflow-wrap: anywhere; }
     #tel-downloader-progress-bar-container select { width: 150px; max-width: 55%; min-width: 0; min-height: 32px; font: inherit; color: var(--tel-fg); background: var(--tel-bg); border: 1px solid var(--tel-line); border-radius: 6px; padding: 4px; }
@@ -984,6 +1024,8 @@
       font: inherit; border-radius: 6px; padding: 5px 8px; min-height: 32px; cursor: pointer; flex-shrink: 0;
     }
     #tel-downloader-progress-bar-container button:hover { background: var(--tel-track); }
+    #tel-downloader-progress-bar-container .tel-settings-toggle { display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 5px; color: var(--tel-muted); }
+    #tel-downloader-progress-bar-container .tel-settings-toggle:hover, #tel-downloader-progress-bar-container .tel-settings-toggle[aria-expanded="true"] { color: var(--tel-fg); background: var(--tel-track); }
     #tel-downloader-progress-bar-container button:focus-visible, #tel-downloader-progress-bar-container select:focus-visible, #tel-downloader-progress-bar-container .tel-task:focus-visible { outline: 2px solid var(--tel-accent); outline-offset: -2px; }
     #tel-downloader-progress-bar-container button:disabled { opacity: .5; cursor: default; }
     #tel-downloader-progress-bar-container [data-action="dismiss"] { color: var(--tel-muted); font-size: 20px; }

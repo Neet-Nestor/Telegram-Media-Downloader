@@ -31,7 +31,7 @@ There are 2 different versions of telegram webapps:
 This script should work on both versions of webapp, but some features are only available in the /k/ version (such as voice message downloads). If certain features are not working, switching to the /k/ version is recommended.
 
 ### Check Downloading Progress
-The download UI supports English, Simplified Chinese, Traditional Chinese, Russian, and Burmese. It follows your browser's language preferences, with English as the fallback. Choose **Interface language** in the task panel to switch immediately; the choice is remembered on the current Telegram web origin.
+The download UI supports English, Simplified Chinese, Traditional Chinese, Russian, and Burmese. It follows your browser's language preferences, with English as the fallback. Open **Settings** (the gear icon) in the task panel and choose **Interface language** to switch immediately; the choice is remembered on the current Telegram web origin.
 
 The panel shows received size, speed, and progress when the total size is known. **Hide** and **×** leave downloads running; **Cancel** stops them. **Retry** starts again from the beginning. **Completed** confirms direct file saving; **Sent to browser** means you should check the browser's download manager. Keep the Telegram tab open until the transfer finishes. You can also check [DevTools console](https://developer.chrome.com/docs/devtools/open/) for logs.
 
