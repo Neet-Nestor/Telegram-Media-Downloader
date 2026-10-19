@@ -47,6 +47,15 @@
       (button) =>
         !button.matches(".tel-download, ._tel_download_button_pinned_container")
     );
+  const isUsableDownloadButton = (button) => {
+    if (button.disabled || button.getAttribute("aria-disabled") === "true" ||
+        button.hidden || button.classList.contains("hide") || button.closest("[inert]")) {
+      return false;
+    }
+    const style = getComputedStyle(button);
+    return style.visibility !== "hidden" && style.visibility !== "collapse" &&
+      button.getClientRects().length > 0;
+  };
   let webKDownloadGlyph = "";
   const createWebKDownloadIcon = (buttonIcon = false) =>
     `<span class="tgico tel-download-icon${buttonIcon ? " button-icon" : ""}" aria-hidden="true">${
@@ -494,7 +503,7 @@
     if (!viewer) return;
     const buttons = viewer.querySelector(".media-viewer-topbar .media-viewer-buttons");
     const nativeDownload = buttons && getWebKDownloadButtons(buttons).find(
-      (button) => !button.disabled && !button.matches(
+      (button) => isUsableDownloadButton(button) && !button.matches(
         '.quality-download-options-button-menu, .btn-menu-toggle, [aria-haspopup="menu"], [aria-haspopup="true"]'
       )
     );
@@ -756,7 +765,7 @@
     }
 
     // Recognize native downloads by their purpose, not their font code point.
-    const nativeDownloadButtons = getWebKDownloadButtons(mediaButtons);
+    const nativeDownloadButtons = getWebKDownloadButtons(mediaButtons).filter(isUsableDownloadButton);
     if (nativeDownloadButtons.length > 0) {
       mediaButtons.querySelectorAll("button.tel-download").forEach((button) => {
         button.remove();
