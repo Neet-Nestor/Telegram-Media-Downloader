@@ -161,3 +161,23 @@ test('truncation, changing totals, overlapping ranges and ignored continuation r
     await page.close();
   }
 });
+
+test('filenames preserve dots and saved types follow the response MIME', async () => {
+  for (const sample of [
+    { kind: 'video', mime: 'video/mp4', name: 'holiday.2026.final.mp4', expected: 'holiday.2026.final.mp4' },
+    { kind: 'video', mime: 'video/quicktime', name: 'movie.mp4', expected: 'movie.mov' },
+    { kind: 'audio', mime: 'audio/mpeg', name: 'recording.ogg', expected: 'recording.mp3' },
+    { kind: 'image', mime: 'image/png', name: 'photo.jpeg', expected: 'photo.png' },
+    { kind: 'image', mime: 'image/tiff', name: 'scan.tiff', expected: 'scan.tiff' },
+  ]) {
+    page = await openPage(browser);
+    const result = await page.evaluate(async sample => {
+      fetch = async () => response(sample.mime, null, 'abc', 200);
+      downloads[sample.kind]('https://test.invalid/stream/' + encodeURIComponent(JSON.stringify({ fileName: sample.name })));
+      await settle();
+      return { name: saved[0]?.name, mime: blobs[0]?.type, errors };
+    }, sample);
+    assert.deepEqual(result, { name: sample.expected, mime: sample.mime, errors: [] });
+    await page.close();
+  }
+});

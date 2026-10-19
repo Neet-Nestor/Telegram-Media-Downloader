@@ -9,7 +9,7 @@ afterEach(async () => { await page?.close(); });
 
 test('WebK toolbar follows a replacement media node', async () => {
   page = await openPage(browser, media('<img class="thumbnail" src="https://test.invalid/first.jpg">'));
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(async () => {
     refresh();
     const replacement = document.createElement('div');
     replacement.className = 'media-viewer-aspecter';
@@ -17,7 +17,8 @@ test('WebK toolbar follows a replacement media node', async () => {
     document.querySelector('.media-viewer-aspecter').replaceWith(replacement);
     refresh();
     document.querySelector('.media-viewer-buttons .tel-download').click();
-    return saved[0]?.href;
+    await settle();
+    return requests[0]?.url;
   });
   assert.equal(result, 'https://test.invalid/second.jpg');
 });

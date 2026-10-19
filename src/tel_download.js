@@ -136,6 +136,54 @@
     return h >>> 0;
   };
 
+  const getMediaMetadata = (url) => {
+    try {
+      return JSON.parse(decodeURIComponent(url.split("/").pop()));
+    } catch {
+      return {};
+    }
+  };
+  const getDownloadFileName = (url, mime, kind) => {
+    const extensions = {
+      "video/mp4": ["mp4", "m4v"], "video/webm": ["webm"],
+      "video/quicktime": ["mov"], "video/x-matroska": ["mkv"],
+      "audio/ogg": ["ogg", "oga", "opus"], "audio/mpeg": ["mp3"],
+      "audio/mp4": ["m4a"], "audio/webm": ["webm"], "audio/aac": ["aac"],
+      "audio/wav": ["wav"], "audio/x-wav": ["wav"],
+      "image/jpeg": ["jpg", "jpeg"], "image/png": ["png"],
+      "image/webp": ["webp"], "image/gif": ["gif"], "image/avif": ["avif"],
+      "image/heic": ["heic"], "image/bmp": ["bmp"], "image/svg+xml": ["svg"],
+    };
+    const metadata = getMediaMetadata(url);
+    let name = typeof metadata?.fileName === "string" ? metadata.fileName : "";
+    if (!name) {
+      try {
+        const basename = decodeURIComponent(new URL(url, location.href).pathname.split("/").pop());
+        if (/\.[a-z0-9]{2,5}$/i.test(basename)) name = basename;
+      } catch {
+        // Some blob URLs do not carry a filename.
+      }
+    }
+    name = (name || hashCode(url).toString(36)).replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, "_");
+    const allowed = extensions[mime?.toLowerCase()] || (mime ? null :
+      (kind === "video" ? ["mp4"] : kind === "audio" ? ["ogg"] : ["jpg"]));
+    const dot = name.lastIndexOf(".");
+    if (!allowed) return dot > 0 ? name : name + ".bin";
+    if (dot > 0 && allowed.includes(name.slice(dot + 1).toLowerCase())) return name;
+    return (dot > 0 ? name.slice(0, dot) : name) + "." + allowed[0];
+  };
+  const saveMediaBlob = (blob, fileName) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    // Let the browser consume the URL before releasing it.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+
   const createProgressBar = (videoId, fileName) => {
     const isDarkMode =
       document.querySelector("html").classList.contains("night") ||
@@ -238,33 +286,19 @@
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
-    let _file_extension = "mp4";
+    let mimeType = "video/mp4";
 
     const videoId =
       (Math.random() + 1).toString(36).substring(2, 10) +
       "_" +
       Date.now().toString();
-    let fileName = hashCode(url).toString(36) + "." + _file_extension;
-
-    // Some video src is in format:
-    // 'stream/{"dcId":5,"location":{...},"size":...,"mimeType":"video/mp4","fileName":"xxxx.MP4"}'
-    try {
-      const metadata = JSON.parse(
-        decodeURIComponent(url.split("/")[url.split("/").length - 1])
-      );
-      if (metadata.fileName) {
-        fileName = metadata.fileName;
-      }
-    } catch (e) {
-      // Invalid JSON string, pass extracting fileName
-    }
-    logger.info(`URL: ${url}`, fileName);
+    let fileName = getDownloadFileName(url, getMediaMetadata(url)?.mimeType, "video");
 
     const fetchNextPart = (_writable) => {
       return fetchMediaPart(url, _next_offset, _total_size, "video")
         .then(({ blob, mime, totalSize, nextOffset }) => {
-          _file_extension = mime.split("/")[1];
-          fileName = fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
+          mimeType = mime;
+          fileName = getDownloadFileName(url, mime, "video");
           _next_offset = nextOffset;
           _total_size = totalSize;
           updateProgress(videoId, fileName, ((_next_offset * 100) / _total_size).toFixed(0));
@@ -308,23 +342,7 @@
     };
 
     const save = () => {
-      logger.info("Finish downloading blobs", fileName);
-      logger.info("Concatenating blobs and downloading...", fileName);
-
-      const blob = new Blob(_blobs, { type: "video/mp4" });
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      logger.info("Final blob size: " + blob.size + " bytes", fileName);
-
-      const a = document.createElement("a");
-      document.body.appendChild(a);
-      a.href = blobUrl;
-      a.download = fileName;
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(blobUrl);
-
-      logger.info("Download triggered", fileName);
+      saveMediaBlob(new Blob(_blobs, { type: mimeType }), fileName);
     };
 
     const supportsFileSystemAccess =
@@ -367,11 +385,14 @@
     let _blobs = [];
     let _next_offset = 0;
     let _total_size = null;
-    const fileName = hashCode(url).toString(36) + ".ogg";
+    let mimeType = "audio/ogg";
+    let fileName = getDownloadFileName(url, getMediaMetadata(url)?.mimeType, "audio");
 
     const fetchNextPart = (_writable) => {
       return fetchMediaPart(url, _next_offset, _total_size, "audio")
-        .then(({ blob, totalSize, nextOffset }) => {
+        .then(({ blob, mime, totalSize, nextOffset }) => {
+          mimeType = mime;
+          fileName = getDownloadFileName(url, mime, "audio");
           _next_offset = nextOffset;
           _total_size = totalSize;
           return blob;
@@ -408,27 +429,7 @@
     };
 
     const save = () => {
-      logger.info(
-        "Finish downloading blobs. Concatenating blobs and downloading...",
-        fileName
-      );
-
-      let blob = new Blob(_blobs, { type: "audio/ogg" });
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      logger.info("Final blob size in bytes: " + blob.size, fileName);
-
-      blob = 0;
-
-      const a = document.createElement("a");
-      document.body.appendChild(a);
-      a.href = blobUrl;
-      a.download = fileName;
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(blobUrl);
-
-      logger.info("Download triggered", fileName);
+      saveMediaBlob(new Blob(_blobs, { type: mimeType }), fileName);
     };
 
     const supportsFileSystemAccess =
@@ -465,18 +466,23 @@
     }
   };
 
-  const tel_download_image = (imageUrl) => {
-    const fileName =
-      (Math.random() + 1).toString(36).substring(2, 10) + ".jpeg"; // assume jpeg
-
-    const a = document.createElement("a");
-    document.body.appendChild(a);
-    a.href = imageUrl;
-    a.download = fileName;
-    a.click();
-    document.body.removeChild(a);
-
-    logger.info("Download triggered", fileName);
+  const tel_download_image = async (url) => {
+    try {
+      const parts = [];
+      let offset = 0;
+      let total = null;
+      let mime;
+      do {
+        const part = await fetchMediaPart(url, offset, total, "image");
+        parts.push(part.blob);
+        offset = part.nextOffset;
+        total = part.totalSize;
+        mime = part.mime;
+      } while (offset < total);
+      saveMediaBlob(new Blob(parts, { type: mime }), getDownloadFileName(url, mime, "image"));
+    } catch (error) {
+      logger.error(error);
+    }
   };
 
   const getMediaSource = (media) =>

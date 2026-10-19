@@ -47,7 +47,7 @@ exports.openPage = async (browser, html = '', pathname = '/k/') => {
     });
     window.fetch = async (url, options) => {
       requests.push({ url, range: options?.headers?.Range });
-      return response('video/mp4', 'bytes 0-2/3');
+      return response(/\.(jpg|jpeg|png)$/.test(url) ? 'image/jpeg' : 'video/mp4', 'bytes 0-2/3');
     };
     window.settle = () => new Promise(resolve => setTimeout(resolve, 50));
   });
