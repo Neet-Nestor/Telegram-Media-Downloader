@@ -94,7 +94,7 @@ test('dismissing progress does not cancel a download or break error handling', a
       let respond;
       fetch = () => new Promise(resolve => { respond = resolve; });
       downloads.video('https://test.invalid/video');
-      document.querySelector('#tel-downloader-progress-bar-container > div > div > div').click();
+      document.querySelector('[data-action="dismiss"]').click();
       respond(response('video/mp4', fail ? null : 'bytes 0-2/3', 'abc', fail ? 500 : 206));
       await settle();
       return { saved: saved.length, errors };

@@ -116,7 +116,7 @@
         const match = res.headers.get("Content-Range")?.match(contentRangeRegex);
         if (!match) throw new Error("Missing or invalid Content-Range");
         const [start, end, size] = match.slice(1).map(Number);
-        if (! [start, end, size].every(Number.isSafeInteger) ||
+        if (![start, end, size].every(Number.isSafeInteger) ||
             start !== offset || end < start || size <= end ||
             (total !== null && total !== size)) {
           throw new Error("Inconsistent media range; download stopped to avoid a corrupt file");
@@ -239,151 +239,237 @@
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
-  const createProgressBar = (videoId, fileName) => {
-    const isDarkMode =
-      document.querySelector("html").classList.contains("night") ||
-      document.querySelector("html").classList.contains("theme-dark");
-    const container = document.getElementById(
-      "tel-downloader-progress-bar-container"
-    );
-    const innerContainer = document.createElement("div");
-    innerContainer.id = "tel-downloader-progress-" + videoId;
-    innerContainer.style.width = "20rem";
-    innerContainer.style.marginTop = "0.4rem";
-    innerContainer.style.padding = "0.6rem";
-    innerContainer.style.backgroundColor = isDarkMode
-      ? "rgba(0,0,0,0.3)"
-      : "rgba(0,0,0,0.6)";
+  const downloadTasks = new Map();
+  const activeDownloads = new Map();
+  const downloadQueue = [];
+  const MAX_CONCURRENT_DOWNLOADS = 2;
+  let runningDownloads = 0;
 
-    const flexContainer = document.createElement("div");
-    flexContainer.style.display = "flex";
-    flexContainer.style.justifyContent = "space-between";
-
-    const title = document.createElement("p");
-    title.className = "filename";
-    title.style.margin = 0;
-    title.style.color = "white";
-    title.innerText = fileName;
-
-    const closeButton = document.createElement("div");
-    closeButton.style.cursor = "pointer";
-    closeButton.style.fontSize = "1.2rem";
-    closeButton.style.color = isDarkMode ? "#8a8a8a" : "white";
-    closeButton.innerHTML = "&times;";
-    closeButton.onclick = function () {
-      container.removeChild(innerContainer);
+  const formatBytes = (bytes) => {
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const index = Math.min(Math.floor(Math.log(Math.max(bytes, 1)) / Math.log(1024)), units.length - 1);
+    return `${(bytes / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
+  };
+  const updateTaskPanel = () => {
+    const panel = document.getElementById("tel-downloader-progress-bar-container");
+    if (!panel) return;
+    panel.hidden = !panel.querySelector(".tel-task");
+    panel.querySelector(".tel-panel-title").textContent = activeDownloads.size
+      ? `Downloads (${activeDownloads.size})` : "Downloads";
+  };
+  const dismissTask = (task) => {
+    document.getElementById("tel-downloader-progress-" + task.id)?.remove();
+    if (task.finished) downloadTasks.delete(task.id);
+    updateTaskPanel();
+  };
+  const showTask = (task) => {
+    const panel = document.getElementById("tel-downloader-progress-bar-container");
+    const list = panel.querySelector(".tel-task-list");
+    list.hidden = false;
+    const toggle = panel.querySelector(".tel-panel-toggle");
+    toggle.textContent = "Hide";
+    toggle.setAttribute("aria-expanded", "true");
+    let card = document.getElementById("tel-downloader-progress-" + task.id);
+    if (!card) {
+      card = document.createElement("div");
+      card.id = "tel-downloader-progress-" + task.id;
+      card.className = "tel-task";
+      card.tabIndex = -1;
+      card.innerHTML = `
+        <div class="tel-task-heading"><p class="filename"></p><button type="button" data-action="dismiss" aria-label="Dismiss download">&times;</button></div>
+        <span class="tel-task-state" role="status" aria-live="polite"></span>
+        <div class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div></div><p></p></div>
+        <p class="tel-task-details"></p><p class="tel-task-error"></p>
+        <div class="tel-task-actions"><button type="button" data-action="cancel">Cancel</button><button type="button" data-action="retry" hidden>Retry</button></div>`;
+      card.querySelector('[data-action="dismiss"]').onclick = () => dismissTask(task);
+      card.querySelector('[data-action="cancel"]').onclick = () => {
+        if (task.finished || task.state === "saving") return;
+        task.controller.abort(new DOMException("Download cancelled", "AbortError"));
+        if (!task.running) finishTask(task, "cancelled");
+      };
+      card.querySelector('[data-action="retry"]').onclick = () => {
+        dismissTask(task);
+        downloadMedia(task.url, task.kind);
+      };
+      list.prepend(card);
+    }
+    renderTask(task);
+    return card;
+  };
+  const renderTask = (task) => {
+    const card = document.getElementById("tel-downloader-progress-" + task.id);
+    if (!card) return;
+    const labels = {
+      preparing: "Preparing", queued: "Queued", downloading: "Downloading",
+      saving: "Saving", completed: "Completed", handedOff: "Sent to browser",
+      failed: "Failed", cancelled: "Cancelled",
     };
-
-    const progressBar = document.createElement("div");
-    progressBar.className = "progress";
-    progressBar.style.backgroundColor = "#e2e2e2";
-    progressBar.style.position = "relative";
-    progressBar.style.width = "100%";
-    progressBar.style.height = "1.6rem";
-    progressBar.style.borderRadius = "2rem";
-    progressBar.style.overflow = "hidden";
-
-    const counter = document.createElement("p");
-    counter.style.position = "absolute";
-    counter.style.zIndex = 5;
-    counter.style.left = "50%";
-    counter.style.top = "50%";
-    counter.style.transform = "translate(-50%, -50%)";
-    counter.style.margin = 0;
-    counter.style.color = "black";
-    const progress = document.createElement("div");
-    progress.style.position = "absolute";
-    progress.style.height = "100%";
-    progress.style.width = "0%";
-    progress.style.backgroundColor = "#6093B5";
-
-    progressBar.appendChild(counter);
-    progressBar.appendChild(progress);
-    flexContainer.appendChild(title);
-    flexContainer.appendChild(closeButton);
-    innerContainer.appendChild(flexContainer);
-    innerContainer.appendChild(progressBar);
-    container.appendChild(innerContainer);
+    const label = labels[task.state];
+    card.dataset.state = task.state;
+    const title = card.querySelector(".filename");
+    title.textContent = task.fileName;
+    title.title = task.fileName;
+    const state = card.querySelector(".tel-task-state");
+    if (state.textContent !== label) state.textContent = label;
+    const progress = card.querySelector(".progress");
+    const percent = task.total ? Math.min(100, Math.floor(task.received * 100 / task.total)) : null;
+    progress.classList.toggle("tel-indeterminate", task.state === "downloading" && percent === null);
+    if (percent === null) progress.removeAttribute("aria-valuenow");
+    else progress.setAttribute("aria-valuenow", percent);
+    progress.setAttribute("aria-valuetext", label);
+    progress.querySelector("div").style.width = (percent ?? 0) + "%";
+    progress.querySelector("p").textContent = task.state === "downloading" && percent !== null ? `${percent}%` : label;
+    const speed = task.received / Math.max((performance.now() - task.startedAt) / 1000, 0.1);
+    card.querySelector(".tel-task-details").textContent =
+      formatBytes(task.received) + (task.total !== null ? ` / ${formatBytes(task.total)}` : "") +
+      (task.state === "downloading" && task.received ? ` · ${formatBytes(speed)}/s` : "");
+    const error = card.querySelector(".tel-task-error");
+    error.textContent = task.error || "";
+    error.hidden = !task.error;
+    const cancel = card.querySelector('[data-action="cancel"]');
+    cancel.hidden = task.finished;
+    cancel.disabled = task.state === "saving";
+    card.querySelector('[data-action="retry"]').hidden = !["failed", "cancelled"].includes(task.state);
+    task.renderedAt = performance.now();
+    task.renderedBytes = task.received;
+    updateTaskPanel();
   };
-
-  const updateProgress = (videoId, fileName, progress) => {
-    const innerContainer = document.getElementById(
-      "tel-downloader-progress-" + videoId
-    );
-    if (!innerContainer) return;
-    innerContainer.querySelector("p.filename").innerText = fileName;
-    const progressBar = innerContainer.querySelector("div.progress");
-    progressBar.querySelector("p").innerText = progress === null ? "Downloading" : progress + "%";
-    progressBar.querySelector("div").style.width = (progress ?? 0) + "%";
+  const finishTask = (task, state, error) => {
+    if (task.finished) return;
+    task.finished = true;
+    clearTimeout(task.progressTimer);
+    task.state = state;
+    task.error = error?.message || (error ? String(error) : "");
+    if (activeDownloads.get(task.key) === task) activeDownloads.delete(task.key);
+    if (error) logger.error(error, task.fileName);
+    renderTask(task);
+    if (!document.getElementById("tel-downloader-progress-" + task.id)) downloadTasks.delete(task.id);
+    updateTaskPanel();
+    task.resolve({ state, fileName: task.fileName, received: task.received });
   };
-
-  const completeProgress = (videoId) => {
-    const progressBar = document
-      .getElementById("tel-downloader-progress-" + videoId)
-      ?.querySelector("div.progress");
-    if (!progressBar) return;
-    progressBar.querySelector("p").innerText = "Completed";
-    progressBar.querySelector("div").style.backgroundColor = "#B6C649";
-    progressBar.querySelector("div").style.width = "100%";
-  };
-
-  const AbortProgress = (videoId) => {
-    const progressBar = document
-      .getElementById("tel-downloader-progress-" + videoId)
-      ?.querySelector("div.progress");
-    if (!progressBar) return;
-    progressBar.querySelector("p").innerText = "Aborted";
-    progressBar.querySelector("div").style.backgroundColor = "#D16666";
-    progressBar.querySelector("div").style.width = "100%";
-  };
-
-  const downloadMedia = async (url, kind) => {
-    if (typeof url !== "string" || !url) return;
-    const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    let fileName = getDownloadFileName(url, getMediaMetadata(url)?.mimeType, kind);
+  const runTask = async (task) => {
     const parts = [];
     let writable;
-    createProgressBar(id, fileName);
+    const checkCancelled = () => {
+      if (task.controller.signal.aborted) throw task.controller.signal.reason;
+    };
     try {
-      const pageWindow = typeof unsafeWindow === "undefined" ? window : unsafeWindow;
-      // Invoke the picker before awaiting network work to preserve user activation.
-      if (kind !== "image" && typeof pageWindow.showSaveFilePicker === "function" &&
-          pageWindow.self === pageWindow.top) {
-        const handle = await pageWindow.showSaveFilePicker({ suggestedName: fileName });
-        writable = await handle.createWritable();
-      }
+      checkCancelled();
+      task.state = "preparing";
+      renderTask(task);
+      if (task.handle) writable = await task.handle.createWritable();
+      checkCancelled();
+      task.state = "downloading";
+      task.startedAt = performance.now();
+      renderTask(task);
       let offset = 0;
       let total = null;
       let mime;
       do {
-        const part = await fetchMediaPart(url, offset, total, kind, {
+        const part = await fetchMediaPart(task.url, offset, total, task.kind, {
+          signal: task.controller.signal,
           write: writable ? (chunk) => writable.write(chunk) : undefined,
-          onProgress: (received, size) => updateProgress(id, fileName,
-            size ? ((received * 100) / size).toFixed(0) : null),
+          onProgress: (received, size) => {
+            task.received = received;
+            task.total = size;
+            if ((!task.renderedBytes && received) || performance.now() - task.renderedAt >= 100 || received === size) {
+              renderTask(task);
+            } else if (!task.progressTimer) {
+              task.progressTimer = setTimeout(() => {
+                task.progressTimer = null;
+                renderTask(task);
+              }, 100);
+            }
+          },
         });
+        checkCancelled();
         if (!writable) parts.push(part.blob);
         offset = part.nextOffset;
         total = part.totalSize;
         mime = part.mime;
-        fileName = getDownloadFileName(url, mime, kind);
-        updateProgress(id, fileName, ((offset * 100) / total).toFixed(0));
+        task.fileName = getDownloadFileName(task.url, mime, task.kind);
+        task.received = offset;
+        task.total = total;
+        renderTask(task);
       } while (offset < total);
+      checkCancelled();
+      task.state = "saving";
+      renderTask(task);
       if (writable) await writable.close();
-      else saveMediaBlob(new Blob(parts, { type: mime }), fileName);
-      completeProgress(id);
+      else saveMediaBlob(new Blob(parts, { type: mime }), task.fileName);
+      finishTask(task, writable ? "completed" : "handedOff");
     } catch (error) {
       if (writable) {
-        try {
-          await writable.abort();
-        } catch {
-          // Failed or already closed streams may reject abort as well.
-        }
+        try { await writable.abort(); } catch { /* Already closed or errored. */ }
       }
-      if (error.name !== "AbortError") logger.error(error, fileName);
-      AbortProgress(id);
+      if (task.controller.signal.aborted || error.name === "AbortError") finishTask(task, "cancelled");
+      else finishTask(task, "failed", error);
     } finally {
       parts.length = 0;
+      task.handle = null;
     }
+  };
+  const pumpDownloads = () => {
+    while (runningDownloads < MAX_CONCURRENT_DOWNLOADS && downloadQueue.length) {
+      const task = downloadQueue.shift();
+      if (task.finished) continue;
+      runningDownloads++;
+      task.running = true;
+      runTask(task).finally(() => {
+        task.running = false;
+        runningDownloads--;
+        pumpDownloads();
+      });
+    }
+  };
+  const downloadMedia = (url, kind) => {
+    if (typeof url !== "string" || !url) return Promise.resolve();
+    const key = `${kind}:${url}`;
+    const existing = activeDownloads.get(key);
+    if (existing) {
+      const card = showTask(existing);
+      card.scrollIntoView({ block: "nearest" });
+      card.focus({ preventScroll: true });
+      return existing.promise;
+    }
+    // Retain a small history without retaining media buffers.
+    for (const previous of downloadTasks.values()) {
+      if (downloadTasks.size < 20) break;
+      if (previous.finished) dismissTask(previous);
+    }
+    const task = {
+      id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+      key, url, kind, fileName: getDownloadFileName(url, getMediaMetadata(url)?.mimeType, kind),
+      state: "preparing", received: 0, total: null, controller: new AbortController(),
+      startedAt: performance.now(), renderedAt: 0, finished: false,
+    };
+    task.promise = new Promise(resolve => { task.resolve = resolve; });
+    downloadTasks.set(task.id, task);
+    activeDownloads.set(key, task);
+    showTask(task);
+    const enqueue = (handle) => {
+      if (task.finished) return;
+      task.handle = handle;
+      task.state = "queued";
+      renderTask(task);
+      downloadQueue.push(task);
+      pumpDownloads();
+    };
+    try {
+      const pageWindow = typeof unsafeWindow === "undefined" ? window : unsafeWindow;
+      if (kind !== "image" && typeof pageWindow.showSaveFilePicker === "function" &&
+          pageWindow.self === pageWindow.top) {
+        // Keep the picker inside the original click, before queueing or fetching.
+        Promise.resolve(pageWindow.showSaveFilePicker({ suggestedName: task.fileName }))
+          .then(enqueue, (error) => {
+            if (error.name === "AbortError") finishTask(task, "cancelled");
+            else finishTask(task, "failed", error);
+          });
+      } else enqueue(null);
+    } catch (error) {
+      finishTask(task, "failed", error);
+    }
+    return task.promise;
   };
   const tel_download_video = (url) => downloadMedia(url, "video");
   const tel_download_audio = (url) => downloadMedia(url, "audio");
@@ -660,21 +746,65 @@
     }
   };
 
-  // Progress bar container setup
-  (function setupProgressBar() {
-    const body = document.querySelector("body");
-    const container = document.createElement("div");
-    container.id = "tel-downloader-progress-bar-container";
-    container.style.position = "fixed";
-    container.style.bottom = 0;
-    container.style.right = 0;
-    if (location.pathname.startsWith("/k/")) {
-      container.style.zIndex = 4;
-    } else {
-      container.style.zIndex = 1600;
+  // The task panel is independent of Telegram's viewer and survives media changes.
+  const panel = document.createElement("section");
+  panel.id = "tel-downloader-progress-bar-container";
+  panel.setAttribute("aria-label", "Media downloads");
+  panel.hidden = true;
+  panel.innerHTML = '<div class="tel-panel-heading"><strong class="tel-panel-title">Downloads</strong><button class="tel-panel-toggle" type="button" aria-expanded="true" aria-controls="tel-task-list">Hide</button></div><div id="tel-task-list" class="tel-task-list"></div>';
+  panel.querySelector(".tel-panel-toggle").onclick = () => {
+    const list = panel.querySelector(".tel-task-list");
+    list.hidden = !list.hidden;
+    const toggle = panel.querySelector(".tel-panel-toggle");
+    toggle.textContent = list.hidden ? "Show" : "Hide";
+    toggle.setAttribute("aria-expanded", String(!list.hidden));
+  };
+  const style = document.createElement("style");
+  style.textContent = `
+    #tel-downloader-progress-bar-container {
+      --tel-bg: #fff; --tel-fg: #202b36; --tel-muted: #556472; --tel-line: #d9e1e8;
+      --tel-track: #e9eef3; --tel-accent: #1967b3; --tel-error: #b42318;
+      box-sizing: border-box; position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom));
+      width: min(340px, calc(100vw - 24px)); max-height: calc(100vh - 24px); z-index: 2147483646;
+      background: var(--tel-bg); color: var(--tel-fg); border: 1px solid var(--tel-line); border-radius: 12px;
+      box-shadow: 0 6px 28px #0003; font: 13px/1.4 system-ui, sans-serif; overflow: hidden;
     }
-    body.appendChild(container);
-  })();
+    html.night #tel-downloader-progress-bar-container, html.theme-dark #tel-downloader-progress-bar-container {
+      --tel-bg: #202a35; --tel-fg: #f2f5f8; --tel-muted: #b0bdca; --tel-line: #455361;
+      --tel-track: #394754; --tel-accent: #73b7ff; --tel-error: #ff9f97;
+    }
+    #tel-downloader-progress-bar-container [hidden], #tel-downloader-progress-bar-container[hidden] { display: none !important; }
+    #tel-downloader-progress-bar-container * { box-sizing: border-box; }
+    #tel-downloader-progress-bar-container p { margin: 0; }
+    #tel-downloader-progress-bar-container .tel-panel-heading, #tel-downloader-progress-bar-container .tel-task-heading {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    #tel-downloader-progress-bar-container .tel-panel-heading { padding: 10px 12px; }
+    #tel-downloader-progress-bar-container .tel-task-list { overflow-y: auto; max-height: min(440px, calc(100vh - 88px)); overscroll-behavior: contain; }
+    #tel-downloader-progress-bar-container .tel-task { padding: 12px; border-top: 1px solid var(--tel-line); }
+    #tel-downloader-progress-bar-container .filename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    #tel-downloader-progress-bar-container button {
+      appearance: none; background: transparent; color: var(--tel-accent); border: 1px solid transparent;
+      font: inherit; border-radius: 6px; padding: 5px 8px; min-height: 32px; cursor: pointer; flex-shrink: 0;
+    }
+    #tel-downloader-progress-bar-container button:hover { background: var(--tel-track); }
+    #tel-downloader-progress-bar-container button:focus-visible, #tel-downloader-progress-bar-container .tel-task:focus-visible { outline: 2px solid var(--tel-accent); outline-offset: -2px; }
+    #tel-downloader-progress-bar-container button:disabled { opacity: .5; cursor: default; }
+    #tel-downloader-progress-bar-container [data-action="dismiss"] { color: var(--tel-muted); font-size: 20px; }
+    #tel-downloader-progress-bar-container .progress { position: relative; height: 24px; margin: 8px 0; background: var(--tel-track); border-radius: 6px; overflow: hidden; }
+    #tel-downloader-progress-bar-container .progress > div { position: absolute; height: 100%; background: var(--tel-accent); opacity: .35; }
+    #tel-downloader-progress-bar-container .progress > p { position: relative; text-align: center; line-height: 24px; color: var(--tel-fg); }
+    #tel-downloader-progress-bar-container .tel-task-details { color: var(--tel-muted); font-variant-numeric: tabular-nums; }
+    #tel-downloader-progress-bar-container .tel-task-error { color: var(--tel-error); margin-top: 8px; overflow-wrap: anywhere; }
+    #tel-downloader-progress-bar-container .tel-task-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
+    #tel-downloader-progress-bar-container .tel-task-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    #tel-downloader-progress-bar-container [data-state="failed"] .progress > div { background: var(--tel-error); }
+    #tel-downloader-progress-bar-container .tel-indeterminate > div { width: 35% !important; animation: tel-download-progress 1.4s infinite ease-in-out; }
+    @keyframes tel-download-progress { from { left: -35%; } to { left: 100%; } }
+    @media (prefers-reduced-motion: reduce) { #tel-downloader-progress-bar-container .tel-indeterminate > div { animation: none; left: 32%; } }
+  `;
+  document.head.appendChild(style);
+  document.body.appendChild(panel);
 
   const isWebK = location.hostname === "webk.telegram.org" || location.pathname.startsWith("/k/");
   const isWebA = location.hostname === "webz.telegram.org" || location.pathname.startsWith("/a/");
