@@ -70,6 +70,51 @@
   };
   const contentRangeRegex = /^bytes (\d+)-(\d+)\/(\d+)$/;
   const REFRESH_DELAY = 500;
+  const DOWNLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+  const fetchMediaPart = async (url, offset, total, kind) => {
+    const res = await fetch(url, {
+      headers: { Range: `bytes=${offset}-${offset + DOWNLOAD_CHUNK_SIZE - 1}` },
+    });
+    if (res.status !== 200 && res.status !== 206) {
+      throw new Error(`Download request failed (HTTP ${res.status})`);
+    }
+    const mime = res.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+    if (!mime?.startsWith(`${kind}/`)) {
+      throw new Error(`Expected ${kind}, received ${mime || "an unknown file type"}`);
+    }
+    let expectedSize;
+    let totalSize;
+    if (res.status === 206) {
+      const match = res.headers.get("Content-Range")?.match(contentRangeRegex);
+      if (!match) throw new Error("Missing or invalid Content-Range");
+      const [start, end, size] = match.slice(1).map(Number);
+      if (
+        ![start, end, size].every(Number.isSafeInteger) ||
+        start !== offset || end < start || size <= end ||
+        (total !== null && total !== size)
+      ) {
+        throw new Error("Inconsistent media range; download stopped to avoid a corrupt file");
+      }
+      expectedSize = end - start + 1;
+      totalSize = size;
+    } else {
+      // A server may ignore Range and return the entire resource, but only
+      // accept that on the first request so we cannot append it twice.
+      if (offset !== 0) throw new Error("Server stopped supporting partial downloads");
+      const length = res.headers.get("Content-Length");
+      if (length !== null && !res.headers.has("Content-Encoding")) {
+        if (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length))) {
+          throw new Error("Invalid Content-Length");
+        }
+        expectedSize = Number(length);
+      }
+    }
+    const blob = await res.blob();
+    if (blob.size === 0 || (expectedSize !== undefined && blob.size !== expectedSize)) {
+      throw new Error("Incomplete media response; received byte count does not match");
+    }
+    return { blob, mime, totalSize: totalSize ?? blob.size, nextOffset: offset + blob.size };
+  };
   const hashCode = (s) => {
     var h = 0,
       l = s.length,
@@ -207,64 +252,14 @@
     logger.info(`URL: ${url}`, fileName);
 
     const fetchNextPart = (_writable) => {
-      return fetch(url, {
-        method: "GET",
-        headers: {
-          Range: `bytes=${_next_offset}-`,
-        },
-        "User-Agent":
-          "User-Agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/117.0",
-      })
-        .then((res) => {
-          if (![200, 206].includes(res.status)) {
-            throw new Error("Non 200/206 response was received: " + res.status);
-          }
-          const mime = res.headers.get("Content-Type").split(";")[0];
-          if (!mime.startsWith("video/")) {
-            throw new Error("Get non video response with MIME type " + mime);
-          }
+      return fetchMediaPart(url, _next_offset, _total_size, "video")
+        .then(({ blob, mime, totalSize, nextOffset }) => {
           _file_extension = mime.split("/")[1];
-          fileName =
-            fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
-
-          const match = res.headers
-            .get("Content-Range")
-            .match(contentRangeRegex);
-
-          const startOffset = parseInt(match[1]);
-          const endOffset = parseInt(match[2]);
-          const totalSize = parseInt(match[3]);
-
-          if (startOffset !== _next_offset) {
-            logger.error("Gap detected between responses.", fileName);
-            logger.info("Last offset: " + _next_offset, fileName);
-            logger.info("New start offset " + match[1], fileName);
-            throw "Gap detected between responses.";
-          }
-          if (_total_size && totalSize !== _total_size) {
-            logger.error("Total size differs", fileName);
-            throw "Total size differs";
-          }
-
-          _next_offset = endOffset + 1;
+          fileName = fileName.substring(0, fileName.indexOf(".") + 1) + _file_extension;
+          _next_offset = nextOffset;
           _total_size = totalSize;
-
-          logger.info(
-            `Get response: ${res.headers.get(
-              "Content-Length"
-            )} bytes data from ${res.headers.get("Content-Range")}`,
-            fileName
-          );
-          logger.info(
-            `Progress: ${((_next_offset * 100) / _total_size).toFixed(0)}%`,
-            fileName
-          );
-          updateProgress(
-            videoId,
-            fileName,
-            ((_next_offset * 100) / _total_size).toFixed(0)
-          );
-          return res.blob();
+          updateProgress(videoId, fileName, ((_next_offset * 100) / _total_size).toFixed(0));
+          return blob;
         })
         .then((resBlob) => {
           if (_writable !== null) {
@@ -366,40 +361,11 @@
     const fileName = hashCode(url).toString(36) + ".ogg";
 
     const fetchNextPart = (_writable) => {
-      return fetch(url, {
-        method: "GET",
-        headers: {
-          Range: `bytes=${_next_offset}-`,
-        },
-      })
-        .then((res) => {
-          if (res.status !== 206 && res.status !== 200) {
-            throw new Error("Non 200/206 response was received: " + res.status);
-          }
-
-          const mime = res.headers.get("Content-Type").split(";")[0];
-          if (!mime.startsWith("audio/")) {
-            logger.error(
-              "Get non audio response with MIME type " + mime,
-              fileName
-            );
-            throw "Get non audio response with MIME type " + mime;
-          }
-
-          const match = res.headers.get("Content-Range")?.match(contentRangeRegex);
-          if (!match) throw new Error("Missing or invalid Content-Range");
-          const startOffset = Number(match[1]);
-          const endOffset = Number(match[2]);
-          const totalSize = Number(match[3]);
-          if (startOffset !== _next_offset) {
-            throw new Error("Gap detected between responses.");
-          }
-          if (_total_size && totalSize !== _total_size) {
-            throw new Error("Total size differs");
-          }
-          _next_offset = endOffset + 1;
+      return fetchMediaPart(url, _next_offset, _total_size, "audio")
+        .then(({ blob, totalSize, nextOffset }) => {
+          _next_offset = nextOffset;
           _total_size = totalSize;
-          return res.blob();
+          return blob;
         })
         .then((resBlob) => {
           if (_writable !== null) {

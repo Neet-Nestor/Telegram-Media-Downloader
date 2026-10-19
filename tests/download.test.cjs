@@ -105,3 +105,59 @@ test('dismissing progress does not cancel a download or break error handling', a
     await page.close();
   }
 });
+
+test('complete HTTP 200 responses work for video and audio', async () => {
+  for (const kind of ['video', 'audio']) {
+    page = await openPage(browser);
+    const result = await page.evaluate(async kind => {
+      fetch = async () => response(kind === 'video' ? 'video/mp4' : 'audio/ogg', null, 'complete', 200);
+      downloads[kind]('https://test.invalid/media');
+      await settle();
+      return { body: await blobs[0]?.text(), errors };
+    }, kind);
+    assert.deepEqual(result, { body: 'complete', errors: [] });
+    await page.close();
+  }
+});
+
+test('partial responses are validated and assembled in order', async () => {
+  page = await openPage(browser);
+  const result = await page.evaluate(async () => {
+    fetch = async (url, options) => {
+      requests.push(options.headers.Range);
+      return requests.length === 1
+        ? response('video/mp4', 'bytes 0-2/6', 'abc')
+        : response('video/mp4', 'bytes 3-5/6', 'def');
+    };
+    downloads.video('https://test.invalid/video');
+    await settle();
+    return { body: await blobs[0]?.text(), requests, errors };
+  });
+  assert.equal(result.body, 'abcdef');
+  assert.match(result.requests[0], /^bytes=0-\d+$/);
+  assert.match(result.requests[1], /^bytes=3-\d+$/);
+  assert.deepEqual(result.errors, []);
+});
+
+test('truncation, changing totals, overlapping ranges and ignored continuation ranges fail', async () => {
+  for (const failure of ['truncated', 'changed-total', 'overlap', 'ignored-range', 'invalid-mime']) {
+    page = await openPage(browser);
+    const result = await page.evaluate(async failure => {
+      let count = 0;
+      fetch = async () => {
+        count++;
+        if (failure === 'truncated') return response('video/mp4', 'bytes 0-9/10', 'abc');
+        if (failure === 'invalid-mime') return response('text/html', null, 'login', 200);
+        if (count === 1) return response('video/mp4', 'bytes 0-2/6', 'abc');
+        if (failure === 'ignored-range') return response('video/mp4', null, 'abcdef', 200);
+        return response('video/mp4', failure === 'overlap' ? 'bytes 0-2/6' : 'bytes 3-5/9', 'def');
+      };
+      downloads.video('https://test.invalid/video');
+      await settle();
+      return { saved: saved.length, errors };
+    }, failure);
+    assert.equal(result.saved, 0, failure);
+    assert.equal(result.errors.length, 1, failure);
+    await page.close();
+  }
+});
