@@ -1,0 +1,11 @@
+{
+  "name": "telegram-media-downloader",
+  "private": true,
+  "scripts": {
+    "check": "node --check src/tel_download.js",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.58.0"
+  }
+}

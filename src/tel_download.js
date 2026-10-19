@@ -365,11 +365,7 @@
       })
         .then((res) => {
           if (res.status !== 206 && res.status !== 200) {
-            logger.error(
-              "Non 200/206 response was received: " + res.status,
-              fileName
-            );
-            return;
+            throw new Error("Non 200/206 response was received: " + res.status);
           }
 
           const mime = res.headers.get("Content-Type").split(";")[0];
@@ -381,36 +377,20 @@
             throw "Get non audio response with MIME type " + mime;
           }
 
-          try {
-            const match = res.headers
-              .get("Content-Range")
-              .match(contentRangeRegex);
-
-            const startOffset = parseInt(match[1]);
-            const endOffset = parseInt(match[2]);
-            const totalSize = parseInt(match[3]);
-
-            if (startOffset !== _next_offset) {
-              logger.error("Gap detected between responses.");
-              logger.info("Last offset: " + _next_offset);
-              logger.info("New start offset " + match[1]);
-              throw "Gap detected between responses.";
-            }
-            if (_total_size && totalSize !== _total_size) {
-              logger.error("Total size differs");
-              throw "Total size differs";
-            }
-
-            _next_offset = endOffset + 1;
-            _total_size = totalSize;
-          } finally {
-            logger.info(
-              `Get response: ${res.headers.get(
-                "Content-Length"
-              )} bytes data from ${res.headers.get("Content-Range")}`
-            );
-            return res.blob();
+          const match = res.headers.get("Content-Range")?.match(contentRangeRegex);
+          if (!match) throw new Error("Missing or invalid Content-Range");
+          const startOffset = Number(match[1]);
+          const endOffset = Number(match[2]);
+          const totalSize = Number(match[3]);
+          if (startOffset !== _next_offset) {
+            throw new Error("Gap detected between responses.");
           }
+          if (_total_size && totalSize !== _total_size) {
+            throw new Error("Total size differs");
+          }
+          _next_offset = endOffset + 1;
+          _total_size = totalSize;
+          return res.blob();
         })
         .then((resBlob) => {
           if (_writable !== null) {
