@@ -133,6 +133,21 @@ If you find a bug, compatibility issue, or have a feature request, please:
 - Test your changes on both Telegram WebK and WebZ versions.
 - Ensure compatibility with major user script managers like Tampermonkey and Violentmonkey.
 
+### Automated Tests
+
+Use Node.js 22 or newer to run the regression tests:
+
+```bash
+npm ci
+npx playwright-core install chromium
+npm run check
+npm test
+```
+
+To use an existing Chromium/Chrome installation, set `TEL_TEST_BROWSER` to its executable path instead of installing Chromium. Tests run in an isolated browser profile with simulated Telegram pages and network responses; no Telegram account is needed. The userscript itself has no npm runtime dependencies.
+
+GitHub Actions runs these checks on every push and pull request. Browser fixtures cover download behavior and known failure cases, while live `/a/` and `/k/` checks remain useful when Telegram changes its markup.
+
 ### Help with Translations
 We want Telegram Media Downloader to be accessible to users worldwide! If you’d like to help translate the script’s Greasy Fork page, follow these steps:
 
