@@ -71,7 +71,7 @@ There are 2 different versions of telegram webapps:
 - https://webk.telegram.org / https://web.telegram.org/k/ (**Recommended**)
 - https://webz.telegram.org / https://web.telegram.org/a/
 
-This script should work on both versions of webapp, but some features are only available in the /k/ version (such as voice message downloads). If certain features are not working, switching to the /k/ version is recommended.
+This script should work on both versions of webapp, but some features are only available in one version: voice message downloads work in the /k/ version, and round video message (video note) downloads work in the /a/ version. If certain features are not working, switching to the /k/ version is recommended.
 
 ### Check Downloading Progress
 The task panel shows the filename, received size, and download speed. When the total size is known, it also shows a percentage. Up to two files download at once; additional files wait in the queue. Clicking the same media again focuses its active task.
