@@ -6,9 +6,9 @@
 // @name:ru      Telegram: загрузчик медиафайлов
 // @version      2.0
 // @namespace    https://github.com/Neet-Nestor/Telegram-Media-Downloader
-// @description  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
-// @description:en  Download images, GIFs, videos, and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
-// @description:ru Загружайте изображения, GIF-файлы, видео и голосовые сообщения в веб-приложении Telegram из частных каналов, которые отключили загрузку и ограничили сохранение контента
+// @description  Download images, GIFs, videos, video messages and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
+// @description:en  Download images, GIFs, videos, video messages and voice messages on the Telegram webapp from private channels that disable downloading and restrict saving content
+// @description:ru Загружайте изображения, GIF-файлы, видео, кружочки и голосовые сообщения в веб-приложении Telegram из частных каналов, которые отключили загрузку и ограничили сохранение контента
 // @description:zh-CN 从禁止下载的Telegram频道中下载图片、视频及语音消息
 // @description:zh-TW 從禁止下載的 Telegram 頻道中下載圖片、影片及語音訊息
 // @author       Nestor Qin
@@ -353,7 +353,9 @@
       return {};
     }
   };
-  const getDownloadFileName = (url, mime, kind) => {
+  // preferredName: необязательное имя файла (например, для кружочков),
+  // которое важнее имени, вычисленного из URL. Расширение подбирается по MIME.
+  const getDownloadFileName = (url, mime, kind, preferredName = null) => {
     const extensions = {
       "video/mp4": ["mp4", "m4v"], "video/webm": ["webm"],
       "video/quicktime": ["mov"], "video/x-matroska": ["mkv"],
@@ -365,7 +367,8 @@
       "image/heic": ["heic"], "image/bmp": ["bmp"], "image/svg+xml": ["svg"],
     };
     const metadata = getMediaMetadata(url);
-    let name = typeof metadata?.fileName === "string" ? metadata.fileName : "";
+    let name = typeof preferredName === "string" && preferredName ? preferredName :
+      typeof metadata?.fileName === "string" ? metadata.fileName : "";
     if (!name) {
       try {
         const basename = decodeURIComponent(new URL(url, location.href).pathname.split("/").pop());
@@ -445,7 +448,7 @@
       };
       card.querySelector('[data-action="retry"]').onclick = () => {
         dismissTask(task);
-        downloadMedia(task.url, task.kind);
+        downloadMedia(task.url, task.kind, task.preferredName);
       };
       list.prepend(card);
     }
@@ -543,7 +546,7 @@
         offset = part.nextOffset;
         total = part.totalSize;
         mime = part.mime;
-        task.fileName = getDownloadFileName(task.url, mime, task.kind);
+        task.fileName = getDownloadFileName(task.url, mime, task.kind, task.preferredName);
         task.received = offset;
         task.total = total;
         renderTask(task);
@@ -578,7 +581,7 @@
       });
     }
   };
-  const downloadMedia = (url, kind) => {
+  const downloadMedia = (url, kind, preferredName = null) => {
     if (typeof url !== "string" || !url) return Promise.resolve();
     const key = `${kind}:${url}`;
     const existing = activeDownloads.get(key);
@@ -595,7 +598,8 @@
     }
     const task = {
       id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-      key, url, kind, fileName: getDownloadFileName(url, getMediaMetadata(url)?.mimeType, kind),
+      key, url, kind, preferredName,
+      fileName: getDownloadFileName(url, getMediaMetadata(url)?.mimeType, kind, preferredName),
       state: "preparing", received: 0, total: null, controller: new AbortController(),
       startedAt: performance.now(), renderedAt: 0, finished: false,
     };
@@ -627,7 +631,7 @@
     }
     return task.promise;
   };
-  const tel_download_video = (url) => downloadMedia(url, "video");
+  const tel_download_video = (url, name) => downloadMedia(url, "video", name);
   const tel_download_audio = (url) => downloadMedia(url, "audio");
   const tel_download_image = (url) => downloadMedia(url, "image");
 
@@ -696,8 +700,58 @@
     else if (imageUrl) tel_download_image(imageUrl);
   };
 
+  // ---------- Кружочки (видеосообщения) в WebA ----------
+  // В WebA кружочек рендерится в ленте чата как <div class="RoundVideo">
+  // с <video> внутри и в MediaViewer не открывается, поэтому кнопку
+  // скачивания вешаем прямо на сам кружочек.
+  const WEB_A_ROUND_SELECTOR = ".RoundVideo";
+  const getRoundVideoUrl = (round) => {
+    for (const video of round.querySelectorAll("video")) {
+      const url = getMediaSource(video);
+      if (url) return url;
+    }
+    return null;
+  };
+  // Имя файла вида circle_<id чата>_<id сообщения>, чтобы файлы не путались.
+  const getRoundVideoName = (round) => {
+    const message = round.closest("[data-message-id], [id^='message-']");
+    const messageId = message?.getAttribute("data-message-id") ||
+      message?.id?.replace(/^message-/, "") || Date.now().toString(36);
+    const chatId = (location.hash.slice(1).split("_")[0] || "chat").replace(/[^\w-]/g, "");
+    return `circle_${chatId}_${messageId}`;
+  };
+  const refreshWebARoundVideos = () => {
+    for (const round of document.querySelectorAll(WEB_A_ROUND_SELECTOR)) {
+      let button = round.querySelector(":scope > .tel-round-download");
+      if (!button) {
+        button = createDownloadButton(
+          "tel-download tel-round-download",
+          '<i class="icon icon-download" aria-hidden="true"></i>',
+          (event) => {
+            // Не даём клику дойти до кружочка, иначе Telegram включит звук или паузу.
+            event.preventDefault();
+            event.stopPropagation();
+            // Ссылку берём в момент клика: видео могло перезагрузиться.
+            const url = getRoundVideoUrl(round);
+            if (url) tel_download_video(url, getRoundVideoName(round));
+          }
+        );
+        for (const type of ["pointerdown", "mousedown", "mouseup", "touchstart", "dblclick"]) {
+          button.addEventListener(type, (event) => event.stopPropagation());
+        }
+        round.appendChild(button);
+      }
+      // Пока видео не загрузилось, кнопка неактивна.
+      const disabled = !getRoundVideoUrl(round);
+      if (button.disabled !== disabled) button.disabled = disabled;
+      localizeDownloadButton(button, disabled);
+    }
+  };
+
   // WebA owns only media discovery and button placement.
   const refreshWebA = () => {
+    refreshWebARoundVideos();
+
     const story = document.getElementById("StoryViewer");
     if (story) {
       const header = story.querySelector(".GrsJNw3y") || story.querySelector(".DropdownMenu")?.parentNode;
@@ -959,7 +1013,9 @@
     for (const task of downloadTasks.values()) renderTask(task);
     updateTaskPanel();
     document.querySelectorAll("button.tel-download, button._tel_download_button_pinned_container").forEach(button => {
-      localizeDownloadButton(button, button.matches("._tel_download_button_pinned_container:disabled"));
+      localizeDownloadButton(button, button.matches(
+        "._tel_download_button_pinned_container:disabled, .tel-round-download:disabled"
+      ));
     });
   };
   languageSelect.onchange = () => {
@@ -1040,6 +1096,21 @@
     #tel-downloader-progress-bar-container .tel-indeterminate > div { width: 35% !important; animation: tel-download-progress 1.4s infinite ease-in-out; }
     @keyframes tel-download-progress { from { left: -35%; } to { left: 100%; } }
     @media (prefers-reduced-motion: reduce) { #tel-downloader-progress-bar-container .tel-indeterminate > div { animation: none; left: 32%; } }
+
+    /* Кнопка скачивания на кружочке (WebA): внизу по центру, внутри круга */
+    .RoundVideo { position: relative; }
+    .RoundVideo > .tel-round-download {
+      position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5;
+      width: 36px; height: 36px; padding: 0; margin: 0; border: 0; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, .55); color: #fff; font-size: 20px; line-height: 1;
+      cursor: pointer; opacity: 0; transition: opacity .15s ease;
+    }
+    .RoundVideo:hover > .tel-round-download, .RoundVideo > .tel-round-download:focus-visible { opacity: 1; }
+    .RoundVideo > .tel-round-download:hover { background: rgba(0, 0, 0, .75); }
+    .RoundVideo > .tel-round-download:disabled { cursor: progress; }
+    .RoundVideo:hover > .tel-round-download:disabled { opacity: .45; }
+    @media (hover: none) { .RoundVideo > .tel-round-download { opacity: .85; } }
   `;
   document.head.appendChild(style);
   document.body.appendChild(panel);
@@ -1051,7 +1122,7 @@
   if (refreshApp) {
     const roots = isWebK
       ? ".media-viewer-whole, #stories-viewer, .pinned-audio, audio-element"
-      : "#MediaViewer, #StoryViewer";
+      : "#MediaViewer, #StoryViewer, .RoundVideo";
     let pending;
     const scheduleRefresh = () => {
       if (pending) return;
@@ -1078,6 +1149,5 @@
     document.addEventListener("visibilitychange", scheduleRefresh);
     refreshApp();
   }
-
   logger.info("Completed script setup.");
 })();
