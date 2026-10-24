@@ -138,3 +138,39 @@ test('media mounted later is detected without polling', async () => {
   assert.equal(await page.locator('.media-viewer-buttons .tel-download').count(), 1);
   assert.equal(await page.evaluate(() => ticks.length), 1);
 });
+
+test('WebA round videos get a button that waits for the source and keeps clicks local', async () => {
+  page = await openPage(browser, '<div class="Message" id="message-42" data-message-id="42"><div class="message-content"><div class="RoundVideo media-inner"><div class="video-wrapper"><video></video></div></div></div></div>', '/a/');
+  const result = await page.evaluate(async () => {
+    location.hash = '#-100123';
+    let roundClicks = 0;
+    document.querySelector('.RoundVideo').addEventListener('click', () => roundClicks++);
+    refresh();
+    const button = document.querySelector('.RoundVideo > .tel-round-download');
+    const disabledBeforeLoad = button.disabled;
+    document.querySelector('video').src = 'https://test.invalid/progressive/document1';
+    refresh();
+    const disabledAfterLoad = button.disabled;
+    button.click();
+    await settle();
+    refresh();
+    return {
+      buttons: document.querySelectorAll('.tel-round-download').length,
+      disabledBeforeLoad, disabledAfterLoad, roundClicks,
+      url: requests[0]?.url, name: saved[0]?.name, errors,
+    };
+  });
+  assert.deepEqual(result, {
+    buttons: 1, disabledBeforeLoad: true, disabledAfterLoad: false, roundClicks: 0,
+    url: 'https://test.invalid/progressive/document1', name: 'circle_-100123_42.mp4', errors: [],
+  });
+});
+
+test('WebA round videos mounted later are detected without polling', async () => {
+  page = await openPage(browser, '', '/a/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend', '<div class="RoundVideo"><video src="https://test.invalid/progressive/document2"></video></div>');
+  });
+  await page.waitForSelector('.RoundVideo > .tel-round-download:not(:disabled)');
+  assert.equal(await page.locator('.tel-round-download').count(), 1);
+});
