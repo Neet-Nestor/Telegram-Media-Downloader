@@ -543,7 +543,7 @@
         offset = part.nextOffset;
         total = part.totalSize;
         mime = part.mime;
-        task.fileName = getDownloadFileName(task.url, mime, task.kind);
+        task.fileName = task.handle?.name || getDownloadFileName(task.url, mime, task.kind);
         task.received = offset;
         task.total = total;
         renderTask(task);
@@ -606,6 +606,7 @@
     const enqueue = (handle) => {
       if (task.finished) return;
       task.handle = handle;
+      task.fileName = handle?.name || task.fileName;
       task.state = "queued";
       renderTask(task);
       downloadQueue.push(task);
