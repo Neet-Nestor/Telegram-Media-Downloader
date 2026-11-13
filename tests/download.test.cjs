@@ -87,6 +87,63 @@ test('disk completion waits for write and close', async () => {
   assert.deepEqual(result.errors, []);
 });
 
+test('concurrent disk downloads keep user-selected filenames before, during and after transfer', async () => {
+  page = await openPage(browser);
+  const result = await page.evaluate(async () => {
+    const firstResponses = [];
+    const pending = [];
+    const written = {};
+    const closed = [];
+    const names = () => [...document.querySelectorAll('.filename')]
+      .map(element => element.textContent).sort();
+    window.showSaveFilePicker = async ({ suggestedName }) => {
+      const name = 'chosen-' + suggestedName;
+      written[name] = '';
+      return { name, createWritable: async () => ({
+        write: async chunk => { written[name] += new TextDecoder().decode(chunk); },
+        close: async () => { closed.push(name); },
+        abort: async () => {},
+      }) };
+    };
+    fetch = async (url, options) => {
+      const mime = url.includes('/audio/') ? 'audio/ogg' : 'video/mp4';
+      return options.headers.Range.startsWith('bytes=0-')
+        ? new Promise(resolve => firstResponses.push(() => resolve(response(mime, 'bytes 0-2/6', 'abc'))))
+        : new Promise(resolve => pending.push(() => resolve(response(mime, 'bytes 3-5/6', 'def'))));
+    };
+    const tasks = ['video', 'audio'].map(kind => downloads[kind](
+      `https://test.invalid/${kind}/` + encodeURIComponent(JSON.stringify({
+        fileName: kind === 'video' ? 'video.mp4' : 'audio.ogg',
+      }))
+    ));
+    await settle();
+    const before = names();
+    firstResponses.forEach(respond => respond());
+    await settle();
+    const during = names();
+    const chunksWritten = { ...written };
+    pending.forEach(respond => respond());
+    const completed = await Promise.all(tasks);
+    return { before, during, chunksWritten, after: names(), written, closed: closed.sort(),
+      completed: completed.map(task => ({ state: task.state, fileName: task.fileName })),
+      saved: saved.length, errors };
+  });
+  const expectedNames = ['chosen-audio.ogg', 'chosen-video.mp4'];
+  assert.deepEqual(result, {
+    before: expectedNames,
+    during: expectedNames,
+    chunksWritten: { 'chosen-video.mp4': 'abc', 'chosen-audio.ogg': 'abc' },
+    after: expectedNames,
+    written: { 'chosen-video.mp4': 'abcdef', 'chosen-audio.ogg': 'abcdef' },
+    closed: expectedNames,
+    completed: [
+      { state: 'completed', fileName: 'chosen-video.mp4' },
+      { state: 'completed', fileName: 'chosen-audio.ogg' },
+    ],
+    saved: 0, errors: [],
+  });
+});
+
 test('dismissing progress does not cancel a download or break error handling', async () => {
   for (const fail of [false, true]) {
     page = await openPage(browser);
